@@ -2729,6 +2729,24 @@ export const en: Translations = {
     markAllRead: 'Mark all as read'
   },
 
+  chat: {
+    context: {
+      label: (place, branch) => (branch ? `${place}, on ${branch}` : place),
+      folderTitle: 'Folder',
+      noFolder: 'No folder',
+      fileUnder: 'File under',
+      branchTitle: 'Branch',
+      branchSwitched: branch => `Now on ${branch}`,
+      branchFailed: 'Could not switch branch',
+      changeFolder: 'Change folder…',
+      folderMoveTitle: 'Move this chat to another folder?',
+      folderMoveConfirm: folder =>
+        `This chat will start working in ${folder}. Its terminal and file tools follow, so anything it runs next happens there.`,
+      folderMoved: folder => `Now working in ${folder}`,
+      folderMoveFailed: 'Could not move the chat'
+    }
+  },
+
   composer: {
     message: 'Message',
     wakingProfile: profile => `Waking up ${profile}…`,

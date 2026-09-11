@@ -2017,6 +2017,24 @@ export const ar = defineLocale({
       ageMin: 'دقيقة'
     }
   },
+  chat: {
+    context: {
+      label: (place, branch) => (branch ? `${place}، على ${branch}` : place),
+      folderTitle: 'المجلد',
+      noFolder: 'بدون مجلد',
+      fileUnder: 'التصنيف ضمن',
+      branchTitle: 'الفرع',
+      branchSwitched: branch => `أنت الآن على ${branch}`,
+      branchFailed: 'تعذر تبديل الفرع',
+      changeFolder: 'تغيير المجلد…',
+      folderMoveTitle: 'نقل هذه المحادثة إلى مجلد آخر؟',
+      folderMoveConfirm: folder =>
+        `ستبدأ هذه المحادثة العمل في ${folder}. الطرفية وأدوات الملفات تتبعها، فكل ما تشغّله بعد ذلك يحدث هناك.`,
+      folderMoved: folder => `تعمل الآن في ${folder}`,
+      folderMoveFailed: 'تعذر نقل المحادثة'
+    }
+  },
+
   composer: {
     setup: {
       projectTitle: 'المشروع',

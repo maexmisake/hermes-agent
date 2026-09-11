@@ -530,11 +530,47 @@ interface WorkspaceMovePayload {
   git_repo_root?: null | string
 }
 
-// Re-home a stored session into another project's root folder — the fix for a
-// chat created in the wrong directory. The backend replaces cwd + git identity
-// (so the tree's grouping follows) and re-anchors any live agent bound to the
-// row; here we mirror the move into the `$sessions` cache so both the flat list
-// and the grouped tree reflect it before the next authoritative refresh.
+/**
+ * Re-home a stored session into another FOLDER — the fix for a chat created in the
+ * wrong directory.
+ *
+ * This is the heavy one, and the opposite of {@link fileSession}: the backend
+ * replaces the session's cwd AND its git identity, and re-anchors any live agent
+ * bound to the row, so the conversation's terminal and file tools start acting on a
+ * different checkout. Offer it only where changing where the work happens is the
+ * stated intent (the session's own context chip) — never as a side effect of tidying
+ * the sidebar. The `$sessions` cache is mirrored here so the list and the tree both
+ * reflect the move before the next authoritative refresh.
+ */
+export async function moveSessionWorkspace(
+  sessionId: string,
+  cwd: string,
+  profile?: null | string
+): Promise<void> {
+  const target = cwd.trim()
+
+  if (!target) {
+    throw new Error(translateNow('sidebar.projects.moveNoFolder'))
+  }
+
+  const res = await gatewayRequest<WorkspaceMovePayload>('session.workspace.move', {
+    cwd: target,
+    session_key: sessionId,
+    ...(profile ? { profile } : {})
+  })
+
+  const moved = res.cwd || target
+  setSessions(prev =>
+    prev.map(s =>
+      sessionMatchesStoredId(s, sessionId)
+        ? { ...s, cwd: moved, git_branch: res.branch ?? null, git_repo_root: res.git_repo_root ?? null }
+        : s
+    )
+  )
+  void refreshProjectTree()
+}
+
+/** {@link moveSessionWorkspace} to a project's root folder. */
 export async function moveSessionToProject(
   sessionId: string,
   projectId: string,
@@ -546,21 +582,7 @@ export async function moveSessionToProject(
     throw new Error(translateNow('sidebar.projects.moveNoFolder'))
   }
 
-  const res = await gatewayRequest<WorkspaceMovePayload>('session.workspace.move', {
-    cwd,
-    session_key: sessionId,
-    ...(profile ? { profile } : {})
-  })
-
-  const moved = res.cwd || cwd
-  setSessions(prev =>
-    prev.map(s =>
-      sessionMatchesStoredId(s, sessionId)
-        ? { ...s, cwd: moved, git_branch: res.branch ?? null, git_repo_root: res.git_repo_root ?? null }
-        : s
-    )
-  )
-  void refreshProjectTree()
+  await moveSessionWorkspace(sessionId, cwd, profile)
 }
 
 export interface RepoDiscoveryPolicy {

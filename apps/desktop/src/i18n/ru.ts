@@ -2621,6 +2621,24 @@ export const ru = defineLocale({
     },
     markAllRead: 'Отметить все как прочитанные'
   },
+  chat: {
+    context: {
+      label: (place, branch) => (branch ? `${place}, ветка ${branch}` : place),
+      folderTitle: 'Папка',
+      noFolder: 'Без папки',
+      fileUnder: 'Отнести к',
+      branchTitle: 'Ветка',
+      branchSwitched: branch => `Теперь ветка ${branch}`,
+      branchFailed: 'Не удалось переключить ветку',
+      changeFolder: 'Сменить папку…',
+      folderMoveTitle: 'Перенести этот чат в другую папку?',
+      folderMoveConfirm: folder =>
+        `Чат начнёт работать в ${folder}. Терминал и файловые инструменты последуют за ним, поэтому всё дальнейшее выполнится там.`,
+      folderMoved: folder => `Теперь работает в ${folder}`,
+      folderMoveFailed: 'Не удалось перенести чат'
+    }
+  },
+
   composer: {
     setup: {
       projectTitle: 'Проект',

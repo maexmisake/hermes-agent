@@ -2343,6 +2343,24 @@ export const ja = defineLocale({
     }
   },
 
+  chat: {
+    context: {
+      label: (place, branch) => (branch ? `${place}、${branch} で作業中` : place),
+      folderTitle: 'フォルダー',
+      noFolder: 'フォルダーなし',
+      fileUnder: '分類先',
+      branchTitle: 'ブランチ',
+      branchSwitched: branch => `${branch} に切り替えました`,
+      branchFailed: 'ブランチを切り替えられませんでした',
+      changeFolder: 'フォルダーを変更…',
+      folderMoveTitle: 'このチャットを別のフォルダーに移動しますか?',
+      folderMoveConfirm: folder =>
+        `このチャットは ${folder} で作業を始めます。ターミナルとファイルツールも追従するため、以降の操作はそこで実行されます。`,
+      folderMoved: folder => `${folder} で作業中になりました`,
+      folderMoveFailed: 'チャットを移動できませんでした'
+    }
+  },
+
   composer: {
     setup: {
       projectTitle: 'プロジェクト',

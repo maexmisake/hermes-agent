@@ -71,6 +71,7 @@ import { ProfileTag } from './profile-tag'
 import { isRouteSessionMismatch } from './route-session-state'
 import { useRuntimeMessageRepository } from './runtime-repository'
 import { ScrollToBottomButton } from './scroll-to-bottom-button'
+import { SessionContextChip } from './session-context-chip'
 import { useSessionView } from './session-view'
 import { SessionActionsMenu } from './sidebar/session-actions-menu'
 import { routedSessionIsLoading, threadLoadingState } from './thread-loading'
@@ -161,7 +162,9 @@ function ChatHeader({
   return (
     <header className={cn(titlebarHeaderBaseClass, isRoutedSessionView && titlebarHeaderShadowClass)}>
       <div
-        className={cn(titlebarHeaderTitleClass, showProfileTag && 'flex items-center')}
+        // The chip rides beside the title, so the row is a flex line whenever
+        // either sidecar is present.
+        className={cn(titlebarHeaderTitleClass, (showProfileTag || activeStoredSession) && 'flex items-center')}
         style={{
           maxWidth:
             'calc(100vw - var(--titlebar-content-inset,0px) - var(--titlebar-tools-right) - var(--titlebar-tools-width) - 1.5rem)'
@@ -179,6 +182,10 @@ function ChatHeader({
         >
           <TitleMenuTrigger>{title}</TitleMenuTrigger>
         </SessionActionsMenu>
+        {/* What this chat is working on, once it IS a chat. The setup bubbles that
+            carried this before the first message are gone by now; the context did
+            not go with them, it just got quiet. */}
+        {activeStoredSession && <SessionContextChip session={activeStoredSession} />}
       </div>
     </header>
   )

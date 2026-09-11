@@ -157,7 +157,15 @@ function SessionColorSwatches({ sessionId }: { sessionId: string }) {
 // Every destination is offered, including Home (which CLEARS the filing) and groups:
 // filing needs no folder, so the old "projects without a root are excluded" rule is
 // gone with the move semantics that required it.
-function MoveToProjectItems({ kit, sessionId, profile }: { kit: MenuKit; sessionId: string; profile?: string }) {
+export function MoveToProjectItems({
+  kit,
+  sessionId,
+  profile
+}: {
+  kit: MenuKit
+  sessionId: string
+  profile?: string
+}) {
   const { t } = useI18n()
   const p = t.sidebar.projects
   const tree = useStore($projectTree)

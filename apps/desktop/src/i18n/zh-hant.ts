@@ -2257,6 +2257,23 @@ export const zhHant = defineLocale({
     }
   },
 
+  chat: {
+    context: {
+      label: (place, branch) => (branch ? `${place},位於 ${branch}` : place),
+      folderTitle: '資料夾',
+      noFolder: '無資料夾',
+      fileUnder: '歸入',
+      branchTitle: '分支',
+      branchSwitched: branch => `已切換至 ${branch}`,
+      branchFailed: '無法切換分支',
+      changeFolder: '變更資料夾…',
+      folderMoveTitle: '將此對話移至其他資料夾?',
+      folderMoveConfirm: folder => `此對話將改在 ${folder} 中作業。終端機與檔案工具也會隨之變更,之後的操作都在那裡執行。`,
+      folderMoved: folder => `現在在 ${folder} 中作業`,
+      folderMoveFailed: '無法移動此對話'
+    }
+  },
+
   composer: {
     setup: {
       projectTitle: '專案',

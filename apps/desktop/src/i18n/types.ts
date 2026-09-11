@@ -2353,6 +2353,24 @@ export interface Translations {
     markAllRead: string
   }
 
+  /** The chat view's own chrome (the context chip beside the session title). */
+  chat: {
+    context: {
+      label: (place: string, branch: string) => string
+      folderTitle: string
+      noFolder: string
+      fileUnder: string
+      branchTitle: string
+      branchSwitched: (branch: string) => string
+      branchFailed: string
+      changeFolder: string
+      folderMoveTitle: string
+      folderMoveConfirm: (folder: string) => string
+      folderMoved: (folder: string) => string
+      folderMoveFailed: string
+    }
+  }
+
   composer: {
     message: string
     wakingProfile: (profile: string) => string

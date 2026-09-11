@@ -2882,6 +2882,23 @@ export const zh: Translations = {
     markAllRead: '全部标记为已读'
   },
 
+  chat: {
+    context: {
+      label: (place, branch) => (branch ? `${place},位于 ${branch}` : place),
+      folderTitle: '文件夹',
+      noFolder: '无文件夹',
+      fileUnder: '归入',
+      branchTitle: '分支',
+      branchSwitched: branch => `已切换到 ${branch}`,
+      branchFailed: '无法切换分支',
+      changeFolder: '更改文件夹…',
+      folderMoveTitle: '将此对话移到其他文件夹?',
+      folderMoveConfirm: folder => `此对话将改在 ${folder} 中工作。终端和文件工具也会随之改变,之后的所有操作都在那里执行。`,
+      folderMoved: folder => `现在在 ${folder} 中工作`,
+      folderMoveFailed: '无法移动此对话'
+    }
+  },
+
   composer: {
     message: '消息',
     wakingProfile: profile => `正在唤醒 ${profile}…`,
