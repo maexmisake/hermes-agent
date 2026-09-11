@@ -2193,16 +2193,19 @@ export const ar = defineLocale({
       label: (place, branch) => (branch ? `${place}، على ${branch}` : place),
       folderTitle: 'المجلد',
       noFolder: 'بدون مجلد',
-      fileUnder: 'التصنيف ضمن',
+      inGroup: name => `ضمن ${name}`,
+      addToGroup: 'إضافة إلى مجموعة',
       branchTitle: 'الفرع',
       branchSwitched: branch => `أنت الآن على ${branch}`,
       branchFailed: 'تعذر تبديل الفرع',
-      changeFolder: 'تغيير المجلد…',
-      folderMoveTitle: 'نقل هذه المحادثة إلى مجلد آخر؟',
-      folderMoveConfirm: folder =>
-        `ستبدأ هذه المحادثة العمل في ${folder}. الطرفية وأدوات الملفات تتبعها، فكل ما تشغّله بعد ذلك يحدث هناك.`,
-      folderMoved: folder => `تعمل الآن في ${folder}`,
-      folderMoveFailed: 'تعذر نقل المحادثة'
+      changeProject: 'العمل في مشروع آخر…',
+      chooseFolder: 'اختيار مجلد…',
+      moveTitle: 'نقل هذه المحادثة؟',
+      moveConfirm: place =>
+        `ستبدأ هذه المحادثة العمل في ${place}. الطرفية وأدوات الملفات تتبعها، فكل ما تشغّله بعد ذلك يحدث هناك.`,
+      moveConfirmLabel: 'انقلها',
+      moved: place => `تعمل الآن في ${place}`,
+      moveFailed: 'تعذر نقل المحادثة'
     }
   },
 
@@ -2212,10 +2215,6 @@ export const ar = defineLocale({
       noProject: 'بدون مشروع',
       newProject: 'مشروع جديد…',
       projectFailed: 'تعذر تعيين المشروع',
-      folderTitle: 'المجلد',
-      noFolder: 'بدون مجلد',
-      chooseFolder: 'اختيار مجلد…',
-      folderFailed: 'تعذر تعيين المجلد',
       branchTitle: 'الفرع',
       noBranch: 'بدون فرع',
       branchSearch: 'ابحث عن فرع أو سمِّ فرعًا',

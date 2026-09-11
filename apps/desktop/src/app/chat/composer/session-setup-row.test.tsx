@@ -9,9 +9,7 @@ vi.mock('@/store/coding-status', () => ({ isGitRepoPath: vi.fn() }))
 vi.mock('@/store/projects', async importOriginal => ({
   ...((await importOriginal()) as Record<string, unknown>),
   listRepoBranches: vi.fn(),
-  pickProjectFolder: vi.fn(),
-  startWorkInRepo: vi.fn(),
-  switchBranchInRepo: vi.fn()
+  startWorkInRepo: vi.fn()
 }))
 
 const coding = await import('@/store/coding-status')
@@ -19,7 +17,6 @@ const isGitRepoPath = vi.mocked(coding.isGitRepoPath)
 
 const projectsStore = await import('@/store/projects')
 const listRepoBranches = vi.mocked(projectsStore.listRepoBranches)
-const pickProjectFolder = vi.mocked(projectsStore.pickProjectFolder)
 const startWorkInRepo = vi.mocked(projectsStore.startWorkInRepo)
 const { $projects } = projectsStore
 
@@ -79,12 +76,13 @@ const openMenu = (target: HTMLElement | RegExp | string) =>
 const choose = async (name: RegExp | string) => fireEvent.click(await screen.findByRole('menuitem', { name }))
 
 describe('the setup row a chat starts with', () => {
-  it('starts clean: a project, a folder, and no branch bubble at all', async () => {
+  it('starts clean: one project bubble, and no branch bubble at all', async () => {
     render(<SessionSetupRow />)
 
-    // Empty is a legitimate finished state, not a form waiting to be completed.
+    // Empty is a legitimate finished state, not a form waiting to be completed. And there
+    // is no folder bubble to fill either: the project IS the folder.
     expect(screen.getByRole('button', { name: 'Project: No project' })).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Folder: No folder' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Folder:/ })).toBeNull()
     await waitFor(() => expect(screen.queryByRole('button', { name: /^Branch:/ })).toBeNull())
   })
 
@@ -98,10 +96,9 @@ describe('the setup row a chat starts with', () => {
     // inheriting whichever project the sidebar happens to be showing.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Project: App' })).toBeTruthy())
     await waitFor(() => expect($currentCwd.get()).toBe('/repo/app'))
-    expect(screen.getByRole('button', { name: 'Folder: app' })).toBeTruthy()
   })
 
-  it('picks a project and takes its folder, without locking the folder', async () => {
+  it('picking a project IS picking where the chat runs', async () => {
     $projects.set([project(), project({ id: 'p_site', name: 'Site', primary_path: '/repo/site' })])
 
     render(<SessionSetupRow />)
@@ -110,29 +107,22 @@ describe('the setup row a chat starts with', () => {
     await choose('Site')
 
     await waitFor(() => expect($newChatProjectId.get()).toBe('p_site'))
+    // One pick, one answer. There is no second bubble that could point elsewhere.
     await waitFor(() => expect($newChatWorkspaceTarget.get()).toBe('/repo/site'))
-
-    pickProjectFolder.mockResolvedValue('/scratch/vps')
-    openMenu('Folder: site')
-    await choose('Choose folder…')
-
-    // Filed under Site, running in a scratch folder. Filing and workspace are
-    // separate, and the row has to let you say so before the first message.
-    await waitFor(() => expect($currentCwd.get()).toBe('/scratch/vps'))
-    expect($newChatProjectId.get()).toBe('p_site')
+    expect($currentCwd.get()).toBe('/repo/site')
   })
 
-  it('grows a branch bubble only once the folder turns out to be a repo', async () => {
+  it('grows a branch bubble only once the project turns out to be a git repo', async () => {
     isGitRepoPath.mockResolvedValue(true)
     listRepoBranches.mockResolvedValue([branch({ isDefault: true, name: 'main' }), branch({ name: 'feature' })])
-    pickProjectFolder.mockResolvedValue('/repo/app')
+    $projects.set([project()])
 
     render(<SessionSetupRow />)
 
     expect(screen.queryByRole('button', { name: /^Branch:/ })).toBeNull()
 
-    openMenu('Folder: No folder')
-    await choose('Choose folder…')
+    openMenu('Project: No project')
+    await choose('App')
 
     // Nobody was asked "is this a git project?" — it was probed and answered.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Branch: No branch' })).toBeTruthy())

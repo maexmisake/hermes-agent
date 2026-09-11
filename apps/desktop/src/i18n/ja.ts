@@ -2552,16 +2552,19 @@ export const ja = defineLocale({
       label: (place, branch) => (branch ? `${place}、${branch} で作業中` : place),
       folderTitle: 'フォルダー',
       noFolder: 'フォルダーなし',
-      fileUnder: '分類先',
+      inGroup: name => `${name} に所属`,
+      addToGroup: 'グループに追加',
       branchTitle: 'ブランチ',
       branchSwitched: branch => `${branch} に切り替えました`,
       branchFailed: 'ブランチを切り替えられませんでした',
-      changeFolder: 'フォルダーを変更…',
-      folderMoveTitle: 'このチャットを別のフォルダーに移動しますか?',
-      folderMoveConfirm: folder =>
-        `このチャットは ${folder} で作業を始めます。ターミナルとファイルツールも追従するため、以降の操作はそこで実行されます。`,
-      folderMoved: folder => `${folder} で作業中になりました`,
-      folderMoveFailed: 'チャットを移動できませんでした'
+      changeProject: '別のプロジェクトで作業…',
+      chooseFolder: 'フォルダーを選択…',
+      moveTitle: 'このチャットを移動しますか?',
+      moveConfirm: place =>
+        `このチャットは ${place} で作業を始めます。ターミナルとファイルツールも追従するため、以降の操作はそこで実行されます。`,
+      moveConfirmLabel: '移動する',
+      moved: place => `${place} で作業中になりました`,
+      moveFailed: 'チャットを移動できませんでした'
     }
   },
 
@@ -2571,10 +2574,6 @@ export const ja = defineLocale({
       noProject: 'プロジェクトなし',
       newProject: '新しいプロジェクト…',
       projectFailed: 'プロジェクトを設定できませんでした',
-      folderTitle: 'フォルダー',
-      noFolder: 'フォルダーなし',
-      chooseFolder: 'フォルダーを選択…',
-      folderFailed: 'フォルダーを設定できませんでした',
       branchTitle: 'ブランチ',
       noBranch: 'ブランチなし',
       branchSearch: 'ブランチを検索または命名',

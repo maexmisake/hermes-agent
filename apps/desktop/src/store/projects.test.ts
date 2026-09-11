@@ -2,6 +2,7 @@ import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { NO_PROJECT_ID, type SidebarProjectTree } from '@/app/chat/sidebar/projects/workspace-groups'
+import type { SessionInfo } from '@/hermes'
 import { $sidebarProjectsOpen, workspaceNodeOpen } from '@/store/layout'
 import { $activeGatewayProfile, $profileScope, ALL_PROFILES, setShowAllProfiles } from '@/store/profile'
 import { $currentCwd, $selectedStoredSessionId, $sessions, applyConfiguredDefaultProjectDir } from '@/store/session'
@@ -13,10 +14,9 @@ import {
   $projectsRpcAvailable,
   $projectTree,
   $worktreeRefreshToken,
+  applySessionToNode,
   createProject,
   fetchProjectSessions,
-  fileSession,
-  fileSessionUnderNode,
   openProjectCreate,
   pickProjectFolder,
   projectIdForCwd,
@@ -27,6 +27,7 @@ import {
   resolveNewSessionCwd,
   revealProject,
   scanAndRecordRepos,
+  setSessionGroup,
   startWorkInRepo
 } from './projects'
 import {
@@ -976,9 +977,10 @@ describe('tombstone pruning', () => {
 })
 
 
-describe('filing a session (organization only)', () => {
-  // The contract: filing NEVER moves a workspace. `session.workspace.move` still does
-  // that, deliberately; these guard that the two stayed apart.
+describe('grouping a session (organization only)', () => {
+  // The contract: a group names no folder, so putting a chat in one NEVER moves its
+  // workspace. `session.workspace.move` still does that, deliberately; these guard that
+  // the two stayed apart, and that a project can only be reached through the move.
   beforeEach(() => {
     vi.clearAllMocks()
     $activeGatewayProfile.set('default')
@@ -1002,56 +1004,31 @@ describe('filing a session (organization only)', () => {
       model: null,
       output_tokens: 0,
       preview: null,
-      project_id: null,
       source: 'desktop',
       started_at: 1,
       title: 'chat',
       tool_call_count: 0,
       ...over
-    }) as never
+    }) as unknown as SessionInfo
 
-  it('sends only the fields it was given, and never a cwd', async () => {
+  const openGateway = () => {
     const request = vi.fn(async () => ({}))
     const gateway = { connectionState: 'open', request }
     activeGateway.mockReturnValue(gateway as never)
     gatewayAtom.set(gateway as never)
 
-    await fileSession('s1', { projectId: 'p_a' })
-
-    expect(request).toHaveBeenCalledWith('session.filing.set', {
-      project_id: 'p_a',
-      session_key: 's1'
-    })
-    // The whole point: no workspace field can ride along.
-    expect(JSON.stringify(request.mock.calls)).not.toContain('cwd')
-  })
-
-  it('maps null to the empty string the backend reads as "clear"', async () => {
-    const request = vi.fn(async () => ({}))
-    const gateway = { connectionState: 'open', request }
-    activeGateway.mockReturnValue(gateway as never)
-    gatewayAtom.set(gateway as never)
-
-    await fileSession('s1', { groupId: null, projectId: null })
-
-    expect(request).toHaveBeenCalledWith('session.filing.set', {
-      group_id: '',
-      project_id: '',
-      session_key: 's1'
-    })
-  })
+    return request
+  }
 
   it('paints the row immediately and leaves the cwd alone', async () => {
-    const request = vi.fn(async () => ({}))
-    const gateway = { connectionState: 'open', request }
-    activeGateway.mockReturnValue(gateway as never)
-    gatewayAtom.set(gateway as never)
+    openGateway()
     $sessions.set([row()])
 
-    await fileSession('s1', { projectId: 'p_a' })
+    await setSessionGroup('s1', 'g_1')
 
     const [updated] = $sessions.get()
-    expect(updated.project_id).toBe('p_a')
+    expect(updated.group_id).toBe('g_1')
+    // The whole point: the chat's folder — and therefore its project — is untouched.
     expect(updated.cwd).toBe('/www/app')
   })
 
@@ -1060,57 +1037,43 @@ describe('filing a session (organization only)', () => {
     const gateway = { connectionState: 'open', request }
     activeGateway.mockReturnValue(gateway as never)
     gatewayAtom.set(gateway as never)
-    $sessions.set([row({ project_id: 'p_before' })])
+    $sessions.set([row({ group_id: 'g_before' })])
 
-    await expect(fileSession('s1', { projectId: 'p_after' })).rejects.toThrow('nope')
+    await expect(setSessionGroup('s1', 'g_after')).rejects.toThrow('nope')
 
-    expect($sessions.get()[0].project_id).toBe('p_before')
+    expect($sessions.get()[0].group_id).toBe('g_before')
   })
 
-  it('files into a group and clears any project, so a row never lands in two places', async () => {
-    const request = vi.fn(async () => ({}))
-    const gateway = { connectionState: 'open', request }
-    activeGateway.mockReturnValue(gateway as never)
-    gatewayAtom.set(gateway as never)
-
+  it('puts a chat in a group without touching its workspace', async () => {
+    const request = openGateway()
     const group = { id: 'g_1', isGroup: true, label: 'Shipping', path: null, repos: [], sessionCount: 0 }
 
-    await fileSessionUnderNode('s1', group as unknown as SidebarProjectTree)
+    await applySessionToNode('s1', group as unknown as SidebarProjectTree)
 
-    expect(request).toHaveBeenCalledWith('session.filing.set', { group_id: 'g_1', session_key: 's1' })
+    expect(request).toHaveBeenCalledWith('session.group.set', { group_id: 'g_1', session_key: 's1' })
+    expect(request).not.toHaveBeenCalledWith('session.workspace.move', expect.anything())
   })
 
-  it('treats Home as "unfile", clearing both fields', async () => {
-    const request = vi.fn(async () => ({}))
-    const gateway = { connectionState: 'open', request }
-    activeGateway.mockReturnValue(gateway as never)
-    gatewayAtom.set(gateway as never)
-
+  it('treats Home as "no group"', async () => {
+    const request = openGateway()
     const home = { id: NO_PROJECT_ID, isNoProject: true, label: 'Home', path: null, repos: [], sessionCount: 0 }
 
-    await fileSessionUnderNode('s1', home as unknown as SidebarProjectTree)
+    await applySessionToNode('s1', home as unknown as SidebarProjectTree)
 
-    expect(request).toHaveBeenCalledWith('session.filing.set', {
-      group_id: '',
-      project_id: '',
-      session_key: 's1'
-    })
+    expect(request).toHaveBeenCalledWith('session.group.set', { group_id: '', session_key: 's1' })
   })
 
-  it('filing into a project also leaves any group, for the same reason', async () => {
-    const request = vi.fn(async () => ({}))
-    const gateway = { connectionState: 'open', request }
-    activeGateway.mockReturnValue(gateway as never)
-    gatewayAtom.set(gateway as never)
-
+  it('MOVES the workspace for a project, because a project is a folder', async () => {
+    const request = openGateway()
     const project = { id: 'p_a', label: 'Alpha', path: '/www/app', repos: [], sessionCount: 0 }
 
-    await fileSessionUnderNode('s1', project as unknown as SidebarProjectTree)
+    await applySessionToNode('s1', project as unknown as SidebarProjectTree)
 
-    expect(request).toHaveBeenCalledWith('session.filing.set', {
-      group_id: '',
-      project_id: 'p_a',
-      session_key: 's1'
-    })
+    // Not filing — the chat's files actually move, which is why every caller has to
+    // confirm with the user before reaching this.
+    expect(request).toHaveBeenCalledWith('session.workspace.move', { cwd: '/www/app', session_key: 's1' })
+    // And it leaves any group: a group outranks project placement, so leaving it set
+    // would land the chat somewhere the user cannot see it.
+    expect(request).toHaveBeenCalledWith('session.group.set', { group_id: '', session_key: 's1' })
   })
 })

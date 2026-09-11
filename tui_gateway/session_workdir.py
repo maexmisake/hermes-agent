@@ -271,7 +271,7 @@ def _ensure_session_db_row(session: dict) -> bool:
                 parent_session_id=session.get("parent_session_id") or None, cwd=_persisted_session_cwd(session),
                 # Filing picked before the first message (session.create). Organization only —
                 # unlike cwd above, neither id is derived from or applied to the workspace.
-                project_id=session.get("project_id") or None, group_id=session.get("group_id") or None,
+                group_id=session.get("group_id") or None,
                 # Self-describing rows: aggregators merging several profile DBs can't rely on which file a row came
                 # from; a NULL is only repaired by the one-shot backfill.
                 # Stamp the launch profile explicitly instead of leaving NULL — NULL is exactly what the

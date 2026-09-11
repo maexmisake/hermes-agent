@@ -207,7 +207,7 @@ _SAME_KEY_NAMESPACE_SQL = (
 _UPSERT_KEEP_EXISTING_SQL = ",\n".join(
     f"                       {col} = COALESCE(sessions.{col}, excluded.{col})" for col in (
         "session_key", "chat_id", "chat_type", "thread_id", "parent_session_id", "cwd", "profile_name",
-        "git_repo_root", "origin_json", "display_name", "project_id", "group_id",
+        "git_repo_root", "origin_json", "display_name", "group_id",
     )
 )
 
@@ -225,10 +225,11 @@ _INHERIT_SEP = ",\n" + " " * 27
 _INHERIT_PARENT_META_SQL = (
     "UPDATE sessions\n                       SET "
     + _INHERIT_SEP.join((
-        # project_id / group_id ride along: a branch or a compression fork of a filed
-        # conversation stays filed where its parent was, instead of dropping back to
-        # cwd-derived placement and appearing to jump projects mid-lineage.
-        *(_inherit_col_sql(c) for c in ("cwd", "git_repo_root", "git_branch", "project_id", "group_id")),
+        # group_id rides along: a branch or a compression fork of a grouped conversation
+        # stays in its group instead of falling out of it mid-lineage. There is no
+        # project_id to inherit — cwd is inherited right here, and a session's project
+        # is whichever project owns that cwd, so the project follows for free.
+        *(_inherit_col_sql(c) for c in ("cwd", "git_repo_root", "git_branch", "group_id")),
         _inherit_col_sql("profile_name", "\n" + " " * 46 + f"AND ({_SAME_KEY_NAMESPACE_SQL})"),
     ))
     + "\n                     WHERE id = ? AND parent_session_id IS NOT NULL"
@@ -282,7 +283,7 @@ class SessionSessionsMixin:
         chat_id: str = None, chat_type: str = None, thread_id: str = None,
         parent_session_id: str = None, cwd: str = None, profile_name: Optional[str] = None,
         git_repo_root: str = None, origin_json: str = None, display_name: str = None,
-        project_id: Optional[str] = None, group_id: Optional[str] = None,
+        group_id: Optional[str] = None,
     ) -> None:
         """Upsert a session row, never overwriting what an earlier writer set (the gateway creates a
         bare row before create_session carries the real model/prompt). chat_id/thread_id scope gateway
@@ -319,9 +320,9 @@ class SessionSessionsMixin:
                    id, source, user_id, session_key, chat_id, chat_type, thread_id,
                    model, model_config, system_prompt, system_prompt_hash,
                    parent_session_id, cwd, profile_name, git_repo_root,
-                   origin_json, display_name, project_id, group_id, started_at
+                   origin_json, display_name, group_id, started_at
                 )
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        model = COALESCE(sessions.model, excluded.model),
                        model_config = CASE
@@ -358,7 +359,7 @@ class SessionSessionsMixin:
                     session_id, source, user_id, session_key, chat_id, chat_type, thread_id, model,
                     json.dumps(model_config) if model_config else None, system_prompt_hash,
                     parent_session_id, cwd, profile_name, git_repo_root, origin_json, display_name,
-                    (project_id or "").strip() or None, (group_id or "").strip() or None,
+                    (group_id or "").strip() or None,
                     time.time(),
                 ),
             )
@@ -904,39 +905,32 @@ class SessionSessionsMixin:
         """Hide/unhide a session and its compression lineage from the default listing; still resumable."""
         return self._set_lineage_column("hidden", session_id, int(hidden))
 
-    def set_session_filing(
-        self, session_id: str, *, project_id: Optional[str] = None, group_id: Optional[str] = None,
-    ) -> bool:
-        """File a session under a project and/or a group, across its compression lineage.
+    def set_session_group(self, session_id: str, group_id: str) -> bool:
+        """Put a session in a group (``""`` removes it), across its compression lineage.
 
-        ORGANIZATION ONLY. This touches neither ``cwd`` nor the git columns, so filing a chat can
-        never relocate the agent's workspace — the split that ``session.workspace.move`` (which
-        re-homes files and REPLACES git identity) deliberately does not make. Callers that want
-        both call both.
+        ORGANIZATION ONLY, and that is the whole point of a group: it touches neither ``cwd`` nor
+        the git columns, so tidying a conversation into a bucket can never relocate the agent's
+        workspace. Moving where a conversation actually works is ``session.workspace.move``, which
+        re-homes files and REPLACES git identity — a different request with a different answer.
 
-        ``None`` leaves a column untouched; ``""`` clears it, dropping the row back to cwd-derived
-        placement. The lineage write is what keeps a filed conversation filed when compression
-        rotates its id — the same reason pins and the read watermark are written this way.
+        A session's PROJECT is not set here, or anywhere: a project is a working folder, so the
+        project is whichever one owns the session's cwd. Changing it means moving the workspace.
+
+        The lineage write is what keeps a grouped conversation grouped when compression rotates its
+        id — the same reason pins and the read watermark are written this way.
         """
-        changed = False
-        for column, value in (("project_id", project_id), ("group_id", group_id)):
-            if value is None:
-                continue
-            if self._set_lineage_column(column, session_id, str(value).strip() or None):
-                changed = True
-        return changed
+        return self._set_lineage_column("group_id", session_id, str(group_id).strip() or None)
 
-    def clear_session_filing(self, *, project_id: str = "", group_id: str = "") -> int:
-        """Unfile every session pointing at a deleted project or group; returns the row count.
+    def clear_session_group(self, group_id: str) -> int:
+        """Ungroup every session pointing at a deleted group; returns the row count.
 
         Tidiness, not correctness: the tree builder already ignores an id nothing claims, so these
         rows are visible either way. Clearing keeps the store from accumulating pointers to things
         that no longer exist.
         """
-        column, value = ("project_id", project_id) if project_id else ("group_id", group_id)
-        if not value:
+        if not group_id:
             return 0
-        return self._write_rowcount(f"UPDATE sessions SET {column} = NULL WHERE {column} = ?", (value,))
+        return self._write_rowcount("UPDATE sessions SET group_id = NULL WHERE group_id = ?", (group_id,))
 
     def set_session_read(self, session_id: str, read: bool = True) -> bool:
         """Mark read/unread across the compression lineage. ``last_read_at`` is a watermark: unread when

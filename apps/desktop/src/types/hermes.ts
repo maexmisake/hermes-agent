@@ -572,14 +572,15 @@ export interface SessionInfo {
    *  groups by this instead of probing git in the GUI. Null for non-git
    *  workspaces and not-yet-backfilled rows. */
   git_repo_root?: null | string
-  /** A project this session was EXPLICITLY filed under, overriding the cwd-derived
-   *  placement above. Organization only: filing a chat never moves its workspace, so
-   *  this can name a project whose folders have nothing to do with {@link cwd}. Null
-   *  means "derive from cwd", which is every pre-filing row. */
-  project_id?: null | string
-  /** A session group this chat was filed into. Outranks {@link project_id} for
-   *  placement — a grouped row renders under its group, labelled with the project it
-   *  came from, so it never appears in two places at once. */
+  /** A session group this chat was put in — an arbitrary bucket for tidying, which
+   *  never implies a folder. It outranks project placement: a grouped row renders
+   *  under its group, labelled with the project its folder belongs to, so it never
+   *  appears in two places at once. Null means ungrouped.
+   *
+   *  There is deliberately no `project_id` beside it. A project IS a working folder,
+   *  so a chat's project is whichever one owns {@link cwd} — storing it again would
+   *  be a second copy of the same fact, free to drift into naming a project the chat
+   *  does not actually work in. */
   group_id?: null | string
   ended_at: null | number
   id: string

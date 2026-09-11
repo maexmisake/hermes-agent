@@ -2,7 +2,6 @@ import { useStore } from '@nanostores/react'
 import type * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 
-import { liveSessionProjectId } from '@/app/chat/sidebar/projects/workspace-groups'
 import { openSession } from '@/app/open-session'
 import {
   closeAllTreeTabs,
@@ -32,7 +31,7 @@ import { PROFILE_SWATCHES } from '@/lib/profile-color'
 import { exportSession } from '@/lib/session-export'
 import { activeGateway } from '@/store/gateway'
 import { notify, notifyError } from '@/store/notifications'
-import { $groupTree, $projects, $projectTree, fileSessionUnderNode } from '@/store/projects'
+import { $groups, setSessionGroup } from '@/store/projects'
 import {
   $activeSessionId,
   $connection,
@@ -144,58 +143,47 @@ function SessionColorSwatches({ sessionId }: { sessionId: string }) {
   )
 }
 
-// The destination list inside the session menu's "File under" submenu. Its own
+// The destination list inside the session menu's "Add to group" submenu. Its own
 // component so only an OPEN submenu subscribes to the stores (same reasoning as
 // SessionColorSwatches).
 //
-// ORGANIZATION ONLY. This used to run `session.workspace.move`, which replaces the
-// conversation's cwd AND its git identity — so tidying the sidebar quietly repointed
-// that agent's terminal and file tools at another checkout. It files instead
-// (`fileSessionUnderNode`), and the workspace is changed from the session's own
-// context chip, where changing it is the stated intent.
-//
-// Every destination is offered, including Home (which CLEARS the filing) and groups:
-// filing needs no folder, so the old "projects without a root are excluded" rule is
-// gone with the move semantics that required it.
-export function MoveToProjectItems({
-  kit,
-  sessionId,
-  profile
-}: {
-  kit: MenuKit
-  sessionId: string
-  profile?: string
-}) {
+// GROUPS ONLY, and that is the point. This used to list projects and run
+// `session.workspace.move`, which replaces the conversation's cwd AND its git
+// identity — so tidying the sidebar quietly repointed that agent's terminal and file
+// tools at another checkout. A project IS a working folder, so moving a chat into one
+// is a workspace move however it is spelled; it belongs on the session's own context
+// chip, which asks first. A group names no folder, so it is safe to do from a row menu
+// with a single click and no question.
+export function AddToGroupItems({ kit, sessionId, profile }: { kit: MenuKit; sessionId: string; profile?: string }) {
   const { t } = useI18n()
   const p = t.sidebar.projects
-  const tree = useStore($projectTree)
-  const groups = useStore($groupTree)
-  const projects = useStore($projects)
+  const groups = useStore($groups)
   const session = useStore($sessions).find(s => sessionMatchesStoredId(s, sessionId))
-  const filedGroupId = session?.group_id?.trim() || null
-  const currentProjectId = filedGroupId ? null : session ? liveSessionProjectId(session, projects) : null
-  const current = filedGroupId ?? currentProjectId
-  const targets = [...tree, ...groups].filter(node => node.id !== current)
+  const current = session?.group_id?.trim() || null
 
-  if (targets.length === 0) {
-    return <kit.Item disabled>{p.moveNoProjects}</kit.Item>
+  if (groups.length === 0) {
+    return <kit.Item disabled>{p.moveNoGroups}</kit.Item>
+  }
+
+  const put = (groupId: null | string, label: string) => {
+    triggerHaptic('selection')
+    setSessionGroup(sessionId, groupId, profile)
+      .then(() => notify({ durationMs: 2_000, kind: 'success', message: p.movedTo(label) }))
+      .catch((err: unknown) => notifyError(err, p.moveFailed))
   }
 
   return (
     <>
-      {targets.map(node => (
-        <kit.Item
-          key={node.id}
-          onSelect={() => {
-            triggerHaptic('selection')
-            fileSessionUnderNode(sessionId, node, profile)
-              .then(() => notify({ durationMs: 2_000, kind: 'success', message: p.movedTo(node.label) }))
-              .catch(err => notifyError(err, p.moveFailed))
-          }}
-        >
-          {node.label}
-        </kit.Item>
-      ))}
+      {groups
+        .filter(group => group.id !== current)
+        .map(group => (
+          <kit.Item key={group.id} onSelect={() => put(group.id, group.name)}>
+            {group.name}
+          </kit.Item>
+        ))}
+      {current && (
+        <kit.Item onSelect={() => put(null, p.moveNoGroup)}>{p.moveNoGroup}</kit.Item>
+      )}
     </>
   )
 }
@@ -507,10 +495,10 @@ function useSessionActions({
       <kit.Sub>
         <kit.SubTrigger disabled={!sessionId}>
           <Codicon name="folder" size="0.875rem" />
-          <span>{t.sidebar.projects.moveToProject}</span>
+          <span>{t.sidebar.projects.addToGroup}</span>
         </kit.SubTrigger>
         <kit.SubContent>
-          <MoveToProjectItems kit={kit} profile={profile} sessionId={sessionId} />
+          <AddToGroupItems kit={kit} profile={profile} sessionId={sessionId} />
         </kit.SubContent>
       </kit.Sub>
       {tabItems.length > 0 && (

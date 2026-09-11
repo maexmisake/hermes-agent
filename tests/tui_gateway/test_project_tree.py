@@ -659,10 +659,13 @@ def test_equivalent_windows_spellings_derive_one_lane_key():
     assert pt._lane_key(a["lane_key"]) == pt._lane_key(b["lane_key"])
 
 
-# ── Explicit filing: project_id / group_id ─────────────────────────────────
-# Filing is ORGANIZATION ONLY. These assert the precedence contract the sidebar
-# relies on — an explicit choice outranks every path heuristic, a group outranks
-# a project, and a dangling id never hides a conversation.
+# ── Groups ─────────────────────────────────────────────────────────────────
+# A group is ORGANIZATION ONLY: an arbitrary bucket that never implies a folder.
+# These assert the contract the sidebar relies on — a group outranks project
+# placement so a row renders once, and a dangling id never hides a conversation.
+#
+# A session's PROJECT is not stored at all: a project IS a working folder, so the
+# project is whichever one owns the cwd. The tests below pin that too.
 
 
 def _group(gid, name, **over):
@@ -671,50 +674,38 @@ def _group(gid, name, **over):
     return row
 
 
-def test_explicit_project_id_outranks_the_folder_match():
-    """A chat filed into B stays in B even though its cwd sits inside A's folder."""
+def test_a_sessions_project_is_the_one_that_owns_its_folder():
+    """The only rule. There is no stored project id that could say otherwise, so a chat cannot
+    claim to be in Beta while its files and terminal are inside Alpha."""
     resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
     a = _project("p_a", "Alpha", ["/a"])
     b = _project("p_b", "Beta", ["/b"])
-    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo", project_id="p_b")]
+    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo")]
 
     tree = pt.build_tree([a, b], sessions, [], resolve, hydrate=True)
 
     owner = next(p for p in tree["projects"] if _sessions_of(p))
-    assert owner["id"] == "p_b"
-    assert not _sessions_of(next(p for p in tree["projects"] if p["id"] == "p_a"))
+    assert owner["id"] == "p_a"
+    assert not _sessions_of(next(p for p in tree["projects"] if p["id"] == "p_b"))
 
 
-def test_explicit_project_id_places_a_session_with_no_cwd():
-    """The point of filing: a chat with no workspace at all can still belong to a project.
-    Without this it would fall to Home, and filing a folder-less chat would be impossible."""
+def test_a_session_with_no_folder_is_in_no_project():
+    """Truthful rather than invented: with no cwd there is no folder, so there is no project.
+    Tidying such a chat is what groups are for."""
     proj = _project("p_a", "Alpha", ["/a"])
-    sessions = [_session("", project_id="p_a")]
+    sessions = [_session("")]
 
     tree = pt.build_tree([proj], sessions, [], None, hydrate=True)
 
-    owner = next(p for p in tree["projects"] if p["id"] == "p_a")
-    assert [s["id"] for s in owner["previewSessions"]] == [sessions[0]["id"]]
-    assert _home(tree) is None
+    assert not _sessions_of(next(p for p in tree["projects"] if p["id"] == "p_a"))
+    assert _home(tree) is not None
 
 
-def test_dangling_project_id_falls_back_to_folder_placement():
-    """A deleted (or cross-profile) project id must not orphan the chat."""
-    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
-    proj = _project("p_a", "Alpha", ["/a"])
-    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo", project_id="p_gone")]
-
-    tree = pt.build_tree([proj], sessions, [], resolve, hydrate=True)
-
-    owner = next(p for p in tree["projects"] if _sessions_of(p))
-    assert owner["id"] == "p_a"
-
-
-def test_archived_project_does_not_claim_its_filed_sessions():
-    """``build_tree`` drops archived projects, so a row filed into one falls back to its folder."""
+def test_archived_project_stops_claiming_its_folder():
+    """``build_tree`` drops archived projects, so their folder falls to the auto-discovered repo."""
     resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
     archived = _project("p_a", "Alpha", ["/a"], archived=True)
-    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo", project_id="p_a")]
+    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo")]
 
     tree = pt.build_tree([archived], sessions, [], resolve, hydrate=True)
 
@@ -739,12 +730,15 @@ def test_group_membership_outranks_project_placement():
     assert [s["id"] for s in _sessions_of(owner)] == [loose["id"]]
 
 
-def test_group_claims_a_session_filed_to_a_project_too():
-    """Both ids set: the group wins, so the chat is not rendered twice."""
+def test_a_grouped_chat_leaves_its_projects_folder_listing():
+    """A chat whose folder is Alpha's, put in a group, renders under the group and NOT under
+    Alpha — one home per row, or the same conversation appears twice."""
+    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
     proj = _project("p_a", "Alpha", ["/a"])
-    session = _session("", project_id="p_a", group_id="g_1")
+    session = _session("/a/repo", branch="main", repo_root="/a/repo", group_id="g_1")
 
-    tree = pt.build_tree([proj], [session], [], None, hydrate=True, groups=[_group("g_1", "Shipping")])
+    tree = pt.build_tree(
+        [proj], [session], [], resolve, hydrate=True, groups=[_group("g_1", "Shipping")])
 
     assert [s["id"] for s in _sessions_of(tree["groups"][0])] == [session["id"]]
     assert not _sessions_of(next(p for p in tree["projects"] if p["id"] == "p_a"))

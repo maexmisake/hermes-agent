@@ -351,10 +351,10 @@ def _(rid, params: dict) -> dict:
             "model_override": session_model_override,
             "create_reasoning_override": create_reasoning_override,
             "create_service_tier_override": create_service_tier_override,
-            # Filing chosen in the composer's setup row before the first message. Held on the
-            # record and written by _ensure_session_db_row with the rest of the lazy row; it never
-            # influences cwd, which session.create resolves independently above.
-            "project_id": _str_param(params, "project_id") or None,
+            # The group chosen for this chat, if any. Held on the record and written by
+            # _ensure_session_db_row with the rest of the lazy row. A group is organization, so it
+            # never influences cwd — and there is no project to carry, because the project IS the
+            # cwd that session.create resolves above.
             "group_id": _str_param(params, "group_id") or None,
             "parent_session_id": parent_session_id, "pending_title": _str_param(params, "title") or None,
             "pending_hidden": _flag(params, "hidden"), "room_plumbing": _flag(params, "room_plumbing"),
@@ -877,40 +877,34 @@ def _(rid, params: dict, session: dict) -> dict:
     return _ok(rid, info)
 
 
-def _filing_param(params: dict, key: str):
-    """Filing tri-state: key absent -> ``None`` (leave alone); present but empty/null -> ``""``
-    (clear, back to cwd-derived placement); otherwise the trimmed id."""
-    return None if key not in params else str(params.get(key) or "").strip()
-
-
-@method("session.filing.set")
+@method("session.group.set")
 def _(rid, params: dict) -> dict:
-    """File a STORED session under a project and/or a group.
+    """Put a STORED session in a group, or take it out (``{"group_id": ""}``).
 
-    ORGANIZATION ONLY, and that is the entire point of it existing beside ``session.workspace.move``:
-    this handler never reads or writes cwd or git identity, so filing a chat into a project can never
-    relocate the agent's workspace. ``{"project_id": ""}`` clears the filing. No live agent is
-    required — filing is a property of the stored row, not of a running turn.
+    ORGANIZATION ONLY, and that is the entire point of it existing beside
+    ``session.workspace.move``: this handler never reads or writes cwd or git identity, so tidying a
+    chat into a bucket can never relocate the agent's workspace. No live agent is required — a
+    group is a property of the stored row, not of a running turn.
+
+    There is no project equivalent. A project IS a working folder, so "put this chat in that
+    project" and "move this chat's workspace there" are the same request, and
+    ``session.workspace.move`` is the handler that answers it.
     """
     if not (target := _str_param(params, "session_key")):
         return _err(rid, 4007, "session_key required")
-    if "project_id" not in params and "group_id" not in params:
-        return _err(rid, 4016, "project_id or group_id required")
+    if "group_id" not in params:
+        return _err(rid, 4016, "group_id required")
     with _profile_db(params) as db:
         if db is None:
             return _db_unavailable_error(rid, code=5007)
         if not db.get_session(target):
             return _err(rid, 4007, "session not found")
         try:
-            db.set_session_filing(
-                target,
-                project_id=_filing_param(params, "project_id"),
-                group_id=_filing_param(params, "group_id"))
+            db.set_session_group(target, str(params.get("group_id") or "").strip())
         except Exception as e:
-            return _err(rid, 5007, f"filing failed: {e}")
+            return _err(rid, 5007, f"grouping failed: {e}")
         row = db.get_session(target) or {}
-    return _ok(rid, {"session_key": target, "project_id": row.get("project_id"),
-                     "group_id": row.get("group_id")})
+    return _ok(rid, {"session_key": target, "group_id": row.get("group_id")})
 
 
 @method("session.workspace.move")

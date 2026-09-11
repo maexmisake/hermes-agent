@@ -8,8 +8,7 @@ vi.mock('@/store/coding-status', () => ({ isGitRepoPath: vi.fn() }))
 vi.mock('@/store/projects', async importOriginal => ({
   ...((await importOriginal()) as Record<string, unknown>),
   listRepoBranches: vi.fn(),
-  startWorkInRepo: vi.fn(),
-  switchBranchInRepo: vi.fn()
+  startWorkInRepo: vi.fn()
 }))
 
 const coding = await import('@/store/coding-status')
@@ -18,7 +17,6 @@ const isGitRepoPath = vi.mocked(coding.isGitRepoPath)
 const projectsStore = await import('@/store/projects')
 const listRepoBranches = vi.mocked(projectsStore.listRepoBranches)
 const startWorkInRepo = vi.mocked(projectsStore.startWorkInRepo)
-const switchBranchInRepo = vi.mocked(projectsStore.switchBranchInRepo)
 const { $projects } = projectsStore
 
 const { $currentBranch, $currentCwd, $newChatWorkspaceTarget, setCurrentBranch, setNewChatWorkspaceTarget } =
@@ -30,9 +28,8 @@ const {
   $newChatProject,
   $newChatProjectId,
   createNewChatBranch,
-  projectDefaultFolder,
+  projectFolder,
   seedNewChatSetup,
-  setNewChatFolder,
   setNewChatProject,
   workOnNewChatBranch
 } = await import('./new-session-setup')
@@ -91,17 +88,17 @@ describe('the remembered project', () => {
   })
 
   it('offers the primary path, falling back to the first folder', () => {
-    expect(projectDefaultFolder(project({ primary_path: '/repo/app' }))).toBe('/repo/app')
+    expect(projectFolder(project({ primary_path: '/repo/app' }))).toBe('/repo/app')
     expect(
-      projectDefaultFolder(project({ folders: [{ path: '/repo/other' }] as ProjectInfo['folders'], primary_path: null }))
+      projectFolder(project({ folders: [{ path: '/repo/other' }] as ProjectInfo['folders'], primary_path: null }))
     ).toBe('/repo/other')
-    expect(projectDefaultFolder(project({ folders: [], primary_path: null }))).toBe('')
-    expect(projectDefaultFolder(null)).toBe('')
+    expect(projectFolder(project({ folders: [], primary_path: null }))).toBe('')
+    expect(projectFolder(null)).toBe('')
   })
 })
 
 describe('picking a project', () => {
-  it('offers the project folder as the workspace, editable after', async () => {
+  it('IS picking the folder — there is no second answer', async () => {
     $projects.set([project()])
 
     await setNewChatProject('p_app')
@@ -109,27 +106,9 @@ describe('picking a project', () => {
     expect($newChatProjectId.get()).toBe('p_app')
     expect($currentCwd.get()).toBe('/repo/app')
     expect($newChatWorkspaceTarget.get()).toBe('/repo/app')
-
-    // The offer is not a lock: the folder bubble can point somewhere else while the
-    // chat stays filed under the project. Filing and workspace are separate.
-    await setNewChatFolder('/somewhere/else')
-
-    expect($newChatProjectId.get()).toBe('p_app')
-    expect($currentCwd.get()).toBe('/somewhere/else')
   })
 
-  it('leaves the folder alone for a project that has none', async () => {
-    $projects.set([project({ folders: [], primary_path: null })])
-    await setNewChatFolder('/already/here')
-
-    await setNewChatProject('p_app')
-
-    // Picking a project is not a request to stop working where you are.
-    expect($currentCwd.get()).toBe('/already/here')
-    expect($newChatProjectId.get()).toBe('p_app')
-  })
-
-  it('remembers "no project" as firmly as it remembers a project', async () => {
+  it('detaches the chat when no project is chosen', async () => {
     $projects.set([project()])
     await setNewChatProject('p_app')
 
@@ -137,64 +116,74 @@ describe('picking a project', () => {
 
     expect($newChatProjectId.get()).toBe('')
     expect($newChatProject.get()).toBeNull()
-  })
-})
-
-describe('the folder', () => {
-  it('detaches explicitly on "no folder" rather than falling back to a default', async () => {
-    await setNewChatFolder('/repo/app')
-
-    await setNewChatFolder(null)
-
-    // null, not undefined: "I chose nothing" reads differently to session.create
-    // than "nothing was chosen yet", and only the former stays detached.
+    // null, not undefined: "I chose nothing" reads differently to session.create than
+    // "nothing was chosen yet", and only the former stays detached.
     expect($newChatWorkspaceTarget.get()).toBeNull()
     expect($currentCwd.get()).toBe('')
   })
 
-  it('shows the branch bubble for a repo and hides it for a plain folder', async () => {
+  it('leaves the chat where it is for a project with no folder recorded', async () => {
+    $projects.set([project({ folders: [], primary_path: null })])
+    $currentCwd.set('/already/here')
+
+    await setNewChatProject('p_app')
+
+    // A half-made project is not a request to stop working where you are.
+    expect($currentCwd.get()).toBe('/already/here')
+    expect($newChatProjectId.get()).toBe('p_app')
+  })
+
+  it('shows the branch bubble for a git project and hides it for a plain one', async () => {
     isGitRepoPath.mockResolvedValue(true)
     listRepoBranches.mockResolvedValue([branch({ name: 'main' })])
+    $projects.set([project(), project({ id: 'p_notes', name: 'Notes', primary_path: '/plain/notes' })])
 
-    await setNewChatFolder('/repo/app')
+    await setNewChatProject('p_app')
 
     expect($newChatFolderIsRepo.get()).toBe(true)
     expect($newChatBranches.get()).toHaveLength(1)
 
     isGitRepoPath.mockResolvedValue(false)
-    await setNewChatFolder('/plain/notes')
+    await setNewChatProject('p_notes')
 
     expect($newChatFolderIsRepo.get()).toBe(false)
     expect($newChatBranches.get()).toEqual([])
   })
 
-  it('re-asks on every pick, so a folder that gains git starts offering branches', async () => {
-    await setNewChatFolder('/plain/notes')
+  it('re-asks on every pick, so a project that gains git starts offering branches', async () => {
+    $projects.set([project({ id: 'p_notes', name: 'Notes', primary_path: '/plain/notes' })])
+
+    await setNewChatProject('p_notes')
     expect($newChatFolderIsRepo.get()).toBe(false)
 
     // Nothing recorded "this is not a git project", so `git init` later needs no
     // migration and no announcement — the next look simply answers yes.
     isGitRepoPath.mockResolvedValue(true)
     listRepoBranches.mockResolvedValue([branch({ name: 'main' })])
-    await setNewChatFolder('/plain/notes')
+    await setNewChatProject('p_notes')
 
     expect($newChatFolderIsRepo.get()).toBe(true)
   })
 
-  it('drops a probe answer that arrived after the folder moved on', async () => {
+  it('drops a probe answer that arrived after the project moved on', async () => {
     let resolveFirst!: (value: boolean) => void
 
+    $projects.set([
+      project({ id: 'p_slow', name: 'Slow', primary_path: '/repo/slow' }),
+      project({ id: 'p_fast', name: 'Fast', primary_path: '/plain/fast' })
+    ])
+
     isGitRepoPath.mockImplementationOnce(() => new Promise<boolean>(done => (resolveFirst = done)))
-    const slow = setNewChatFolder('/repo/slow')
+    const slow = setNewChatProject('p_slow')
 
     isGitRepoPath.mockResolvedValue(false)
-    await setNewChatFolder('/plain/fast')
+    await setNewChatProject('p_fast')
 
     resolveFirst(true)
     await slow
 
-    // The stale "yes it's a repo" would otherwise put a branch bubble on a folder
-    // that is not one, listing branches from a repo nobody is looking at.
+    // The stale "yes it's a repo" would otherwise put a branch bubble on a folder that
+    // is not one, listing branches from a repo nobody is looking at.
     expect($newChatFolderIsRepo.get()).toBe(false)
   })
 })
@@ -218,12 +207,26 @@ describe('choosing a branch', () => {
     expect($currentCwd.get()).toBe('/repo/app-feature')
   })
 
-  it('uses the repo itself for the default branch instead of a worktree beside it', async () => {
-    await workOnNewChatBranch('/repo/app', branch({ isDefault: true, name: 'main' }))
+  it('uses the repo itself for the default branch, without checking anything out', async () => {
+    // `git worktree list` reports the MAIN checkout too, so the default branch arrives
+    // with a worktreePath and resolves to the repo — no worktree beside it, and no
+    // checkout switched in a folder another session may be sitting in.
+    await workOnNewChatBranch('/repo/app', branch({ isDefault: true, name: 'main', worktreePath: '/repo/app' }))
 
-    expect(switchBranchInRepo).toHaveBeenCalledWith('/repo/app', 'main')
     expect($currentCwd.get()).toBe('/repo/app')
     expect(startWorkInRepo).not.toHaveBeenCalled()
+  })
+
+  it('never switches a shared checkout to reach a branch', async () => {
+    startWorkInRepo.mockResolvedValue({ branch: 'feature', path: '/repo/app-feature' })
+
+    // The branch is checked out nowhere, and this chat's folder is the shared repo root.
+    // Making a worktree is the only safe answer: another session could be mid-turn in
+    // that root, and swapping its branch would change the files under its feet.
+    await workOnNewChatBranch('/repo/app', branch({ name: 'feature' }))
+
+    expect(startWorkInRepo).toHaveBeenCalledWith('/repo/app', { existingBranch: 'feature' })
+    expect($currentCwd.get()).toBe('/repo/app-feature')
   })
 
   it('creates a branch ONLY when one is named', async () => {

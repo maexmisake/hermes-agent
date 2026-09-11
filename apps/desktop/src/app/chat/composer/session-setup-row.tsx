@@ -24,27 +24,26 @@ import {
   $newChatProject,
   createNewChatBranch,
   seedNewChatSetup,
-  setNewChatFolder,
   setNewChatProject,
   workOnNewChatBranch
 } from '@/store/new-session-setup'
 import { notifyError } from '@/store/notifications'
-import { $projects, openProjectCreate, pickProjectFolder } from '@/store/projects'
+import { $projects, openProjectCreate } from '@/store/projects'
 import { $currentBranch, $currentCwd, $newChatWorkspaceTargetGeneration } from '@/store/session'
 
 /**
- * The new-chat setup row: three bubbles above the composer that say what this chat is
- * about to work on, shown only until the first message is sent.
+ * The new-chat setup row: what this chat is about to work on, shown only until the first
+ * message is sent.
  *
- * They are an OFFER, never a form. A chat can start with all three empty, and each is
- * editable right up to the send — which is why they live here, above the composer, and
- * not in a dialog you have to get through first. After the send the chat is an ordinary
+ * Two bubbles, because there are two things. A PROJECT is a working folder — the one and
+ * only answer to "where does this chat run" — and a BRANCH appears beside it when that
+ * folder turns out to be a git repo. There is deliberately no third bubble for the folder:
+ * the project IS the folder, so a separate one could only ever disagree with it.
+ *
+ * They are an OFFER, never a form. A chat can start with neither, and both stay editable
+ * right up to the send — which is why they live here, above the composer, and not in a
+ * dialog you have to get through first. After the send the chat is an ordinary
  * conversation and the row is gone; the context moves to the quiet chip by the title.
- *
- * The three are not independent. A project offers its folder, and a folder that turns
- * out to be a git repo grows a branch bubble. A plain folder never shows one: the
- * settled shape is that a project IS a folder, and git is a property that folder either
- * has or doesn't, asked fresh each time rather than recorded.
  */
 export function SessionSetupRow() {
   const generation = useStore($newChatWorkspaceTargetGeneration)
@@ -85,7 +84,7 @@ function SetupBubbles() {
     <div className="flex flex-wrap items-center gap-1.5" data-slot="session-setup-row">
       <SetupBubble
         busy={busy}
-        icon="folder-library"
+        icon={project?.icon || 'folder-library'}
         label={project?.name || s.noProject}
         set={Boolean(project)}
         title={s.projectTitle}
@@ -107,6 +106,8 @@ function SetupBubbles() {
             <DropdownMenuSeparator />
           </>
         )}
+        {/* "No project" is not an empty slot to be filled — it is a chat that touches no
+            folder, which is the right shape for a question. */}
         <DropdownMenuItem
           className={dropdownMenuRow}
           onSelect={() => run(() => setNewChatProject(null), s.projectFailed)}
@@ -120,50 +121,9 @@ function SetupBubbles() {
         </DropdownMenuItem>
       </SetupBubble>
 
-      <SetupBubble busy={busy} icon="folder" label={folderLabel(cwd) || s.noFolder} set={Boolean(cwd)} title={s.folderTitle}>
-        {/* A project's own folders first: picking the project offered one, and these
-            are the rest of the same project, which is the likeliest second choice. */}
-        {(project?.folders.length ?? 0) > 1 && (
-          <>
-            <div className={cn(dropdownMenuSectionLabel, 'text-(--ui-text-quaternary)')}>{project?.name}</div>
-            {project?.folders.map(folder => (
-              <DropdownMenuItem
-                className={dropdownMenuRow}
-                key={folder.path}
-                onSelect={() => run(() => setNewChatFolder(folder.path), s.folderFailed)}
-              >
-                <Codicon name="folder" size="0.75rem" />
-                <span className="truncate">{folderLabel(folder.path)}</span>
-                {folder.path === cwd && <Codicon className="ml-auto" name="check" size="0.75rem" />}
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-          </>
-        )}
-        <DropdownMenuItem
-          className={dropdownMenuRow}
-          onSelect={() =>
-            run(async () => {
-              const picked = await pickProjectFolder()
-
-              if (picked) {
-                await setNewChatFolder(picked)
-              }
-            }, s.folderFailed)
-          }
-        >
-          <Codicon name="folder-opened" size="0.75rem" />
-          {s.chooseFolder}
-        </DropdownMenuItem>
-        <DropdownMenuItem className={dropdownMenuRow} onSelect={() => run(() => setNewChatFolder(null), s.folderFailed)}>
-          <Codicon name="circle-slash" size="0.75rem" />
-          {s.noFolder}
-        </DropdownMenuItem>
-      </SetupBubble>
-
-      {/* Only a git folder gets one. Nothing records that a folder "is a git project":
-          it is probed on every pick, so one that gets `git init` later simply starts
-          showing this, and one that stops being a repo stops. */}
+      {/* Only a git folder gets one. Nothing records that a project "is a git project":
+          the folder is probed on every pick, so one that gets `git init` later simply
+          starts showing this, and one that stops being a repo stops. */}
       {isRepo && (
         <BranchBubble
           branch={branch}
@@ -176,13 +136,6 @@ function SetupBubbles() {
       )}
     </div>
   )
-}
-
-/** The last path segment — the folder's name, which is what the bubble has room for. */
-function folderLabel(path: string): string {
-  const trimmed = path.trim().replace(/[/\\]+$/, '')
-
-  return trimmed ? (trimmed.split(/[/\\]/).pop() ?? trimmed) : ''
 }
 
 function SetupBubble({
@@ -207,8 +160,8 @@ function SetupBubble({
         className={cn(
           composerFloatingPill,
           'max-w-44',
-          // An unset bubble is quieter than a set one: the row should read as an
-          // offer you can ignore, not three blanks demanding to be filled.
+          // An unset bubble is quieter than a set one: the row should read as an offer
+          // you can ignore, not blanks demanding to be filled.
           !set && 'text-(--ui-text-tertiary)',
           busy && 'pointer-events-none opacity-60'
         )}
@@ -227,10 +180,10 @@ function SetupBubble({
 /**
  * The branch bubble.
  *
- * Picking an existing branch never makes one: a branch with a checkout already gets
- * that folder back (so a second chat continues the same unfinished work), and one
- * without gets a worktree made for it. Making a branch is only ever reached by typing
- * a name into the last row, because opening a chat is not a request for a new branch.
+ * Picking an existing branch never makes one: a branch with a checkout already gets that
+ * folder back (so a second chat continues the same unfinished work), and one without gets
+ * a worktree made for it. Making a branch is only ever reached by typing a name into the
+ * last row, because opening a chat is not a request for a new branch.
  */
 function BranchBubble({
   branch,
@@ -254,8 +207,8 @@ function BranchBubble({
 
   const needle = query.trim().toLowerCase()
   const matches = needle ? branches.filter(entry => entry.name.toLowerCase().includes(needle)) : branches
-  // The typed name is only offered when it is not already a branch — otherwise the
-  // row would propose creating something the list above it can just open.
+  // The typed name is only offered when it is not already a branch — otherwise the row
+  // would propose creating something the list above it can just open.
   const canCreate = Boolean(needle) && !branches.some(entry => entry.name.toLowerCase() === needle)
   const defaultBase = branches.find(entry => entry.isDefault)?.name
 
@@ -299,8 +252,8 @@ function BranchBubble({
           <DropdownMenuItem className={dropdownMenuRow} key={entry.name} onSelect={() => onPick(entry)}>
             <Codicon name={entry.isRemote ? 'cloud' : 'git-branch'} size="0.75rem" />
             <span className="truncate">{entry.name}</span>
-            {/* The one thing worth saying about a branch here: it already has a folder,
-                so choosing it continues that work rather than starting a copy. */}
+            {/* The one thing worth saying about a branch here: it already has a folder, so
+                choosing it continues that work rather than starting a copy. */}
             {entry.worktreePath && (
               <span className="ml-auto shrink-0 text-[0.625rem] text-(--ui-text-quaternary)">{s.branchOpen}</span>
             )}

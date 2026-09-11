@@ -110,11 +110,10 @@ def _(rid, params, pdb, conn) -> dict:
 def _(rid, params, pdb, conn) -> dict:
     project = _require_project(pdb, conn, params)
     pdb.delete_project(conn, project.id)
-    # Same best-effort unfile as groups.delete: rows filed here fall back to cwd placement either
-    # way, this just stops the store from keeping pointers to a project that is gone.
-    with contextlib.suppress(Exception), _profile_db(params) as db:
-        if db is not None:
-            db.clear_session_filing(project_id=project.id)
+    # Nothing to unfile. A session's project is whichever one owns its cwd, so deleting the
+    # project simply stops that folder being claimed — the chats keep their folder and fall
+    # back to an auto-discovered repo or Home. Groups are the only stored membership, and
+    # `groups.delete` clears those.
     return _ok(rid, _projects_payload(conn))
 
 
@@ -173,7 +172,7 @@ def _(rid, params, pdb, conn) -> dict:
     # This only stops the store from keeping pointers to a group that is gone.
     with contextlib.suppress(Exception), _profile_db(params) as db:
         if db is not None:
-            db.clear_session_filing(group_id=group.id)
+            db.clear_session_group(group.id)
     return _ok(rid, _groups_payload(pdb, conn))
 
 
@@ -386,10 +385,11 @@ def _project_tree_row(r: dict) -> dict:
             "message_count", "tool_call_count", "input_tokens", "output_tokens")},
         **{k: r.get(k) for k in ("actual_cost_usd", "estimated_cost_usd", "model")},
         is_active=False,
-        # project_id / group_id ride along so the renderer can name a row's filing without a
-        # second round trip — and so its optimistic overlay places a freshly filed chat the
-        # same way build_tree just did.
-        **{k: r.get(k) for k in ("cwd", "git_branch", "git_repo_root", "project_id", "group_id")})
+        # group_id rides along so the renderer can name a row's group without a second round
+        # trip, and so its optimistic overlay places a freshly grouped chat the same way
+        # build_tree just did. The project needs no such field: it follows from cwd, which is
+        # right here.
+        **{k: r.get(k) for k in ("cwd", "git_branch", "git_repo_root", "group_id")})
     return row
 
 

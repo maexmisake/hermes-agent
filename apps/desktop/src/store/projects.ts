@@ -30,7 +30,7 @@ import {
   workspaceCwdForNewSession
 } from '@/store/session'
 import { $removedSessionIds, $sessionMutationsInFlight } from '@/store/session-removal'
-import type { GroupInfo, GroupsPayload, ProjectInfo, ProjectsPayload, SessionInfo } from '@/types/hermes'
+import type { GroupInfo, GroupsPayload, ProjectInfo, ProjectsPayload } from '@/types/hermes'
 
 // First-class, per-profile Projects (named, multi-folder workspaces). State is
 // served by the live gateway's `projects.*` JSON-RPC methods, which wrap the
@@ -1229,56 +1229,40 @@ export async function reorderGroups(ids: string[]): Promise<void> {
 }
 
 /**
- * File a session under a project and/or a group. ORGANIZATION ONLY.
+ * Put a session in a group, or take it out (`null`). ORGANIZATION ONLY.
  *
- * The split from {@link moveSessionToProject} is the entire point: that one re-homes the
- * conversation's workspace (cwd AND git identity, via `session.workspace.move`), this one
- * touches neither. The sidebar's drag and its "Move to project" menu use THIS, so tidying a
- * chat can never relocate the agent's files — the behaviour that made dragging a session
- * between projects quietly repoint its terminal and file tools at another checkout.
+ * A group is an arbitrary bucket for tidying conversations — it names no folder, so this
+ * touches neither cwd nor git identity. That is the whole split from
+ * {@link moveSessionWorkspace}, which re-homes the conversation's files and REPLACES its
+ * git identity: dragging a chat around the sidebar can never repoint an agent's terminal
+ * at another checkout, because dragging only ever reaches this.
  *
- * `undefined` leaves a field alone; `null` clears it back to cwd-derived placement.
+ * There is no project equivalent. A project IS a working folder, so "put this chat in that
+ * project" is a workspace move, and {@link moveSessionToProject} is what answers it.
  */
-export async function fileSession(
+export async function setSessionGroup(
   sessionId: string,
-  filing: { groupId?: null | string; projectId?: null | string },
+  groupId: null | string,
   profile?: null | string
 ): Promise<void> {
-  const params: Record<string, unknown> = { session_key: sessionId, ...(profile ? { profile } : {}) }
+  const params = { group_id: groupId ?? '', session_key: sessionId, ...(profile ? { profile } : {}) }
 
-  if (filing.projectId !== undefined) {
-    params.project_id = filing.projectId ?? ''
-  }
-
-  if (filing.groupId !== undefined) {
-    params.group_id = filing.groupId ?? ''
-  }
-
-  // Paint first, reconcile after. Roll back only THIS row's filing rather than restoring a
-  // whole snapshot, so a concurrent list refresh isn't clobbered by a failed write.
+  // Paint first, reconcile after. Roll back only THIS row rather than restoring a whole
+  // snapshot, so a concurrent list refresh isn't clobbered by a failed write.
   const before = $sessions.get().find(session => sessionMatchesStoredId(session, sessionId))
 
-  const applyFiling = (session: SessionInfo, next: Pick<SessionInfo, 'group_id' | 'project_id'>): SessionInfo => ({
-    ...session,
-    ...(filing.projectId !== undefined && { project_id: next.project_id ?? null }),
-    ...(filing.groupId !== undefined && { group_id: next.group_id ?? null })
-  })
-
-  setSessions(prev =>
-    prev.map(session =>
-      sessionMatchesStoredId(session, sessionId)
-        ? applyFiling(session, { group_id: filing.groupId ?? null, project_id: filing.projectId ?? null })
-        : session
+  const paint = (next: null | string) =>
+    setSessions(prev =>
+      prev.map(session => (sessionMatchesStoredId(session, sessionId) ? { ...session, group_id: next } : session))
     )
-  )
+
+  paint(groupId ?? null)
 
   try {
-    await gatewayRequest('session.filing.set', params)
+    await gatewayRequest('session.group.set', params)
   } catch (err) {
     if (before) {
-      setSessions(prev =>
-        prev.map(session => (sessionMatchesStoredId(session, sessionId) ? applyFiling(session, before) : session))
-      )
+      paint(before.group_id ?? null)
     }
 
     throw err
@@ -1288,50 +1272,48 @@ export async function fileSession(
 }
 
 /**
- * File a session under a sidebar tree node, adopting an auto-discovered repo first.
+ * Act on a sidebar tree node the user dropped a session onto, or picked from its menu.
  *
- * An auto node's id is a repo PATH, which no projects.db row claims — storing it as a
- * filing would leave an id that resolves to nothing, and the row would silently fall back
- * to cwd placement. Adopting the repo as a real project first is the same move
- * {@link setProjectAppearance} makes when you colour one. Home (`isNoProject`) has no row
- * to point at either, so choosing it CLEARS the filing, which is exactly what it means.
+ * The two kinds of node are NOT the same weight, and this is the one place that decides
+ * which is which:
+ *
+ *  - A GROUP (or Home, meaning "no group") is organization. Instant, reversible, and it
+ *    moves nothing.
+ *  - A PROJECT is a place — the chat's working folder. Choosing one re-homes the
+ *    conversation, so callers must confirm with the user BEFORE calling this; there is no
+ *    way to reach a project here by accident, because the caller had to pass one.
+ *
+ * An auto-discovered node's id is a repo PATH rather than a projects.db row, so its folder
+ * is used directly — the move only ever needs a folder, and adopting the repo as a project
+ * row can wait for the user to actually name it.
  */
-export async function fileSessionUnderNode(
+export async function applySessionToNode(
   sessionId: string,
   node: Pick<SidebarProjectTree, 'id' | 'isAuto' | 'isGroup' | 'isNoProject' | 'label' | 'path'>,
   profile?: null | string
 ): Promise<void> {
   if (node.isGroup) {
-    await fileSession(sessionId, { groupId: node.id }, profile)
+    await setSessionGroup(sessionId, node.id, profile)
 
     return
   }
 
   if (node.isNoProject) {
-    await fileSession(sessionId, { groupId: null, projectId: null }, profile)
+    await setSessionGroup(sessionId, null, profile)
 
     return
   }
 
-  let projectId = node.id
+  const folder = (node.path || '').trim() || projectRootCwd($projectTree.get().find(n => n.id === node.id))
 
-  if (node.isAuto) {
-    if (!node.path) {
-      throw new Error(translateNow('sidebar.projects.moveNoFolder'))
-    }
-
-    const adopted = await createProject({ folders: [node.path], name: node.label, primaryPath: node.path })
-
-    if (!adopted) {
-      throw new Error(translateNow('sidebar.projects.moveFailed'))
-    }
-
-    projectId = adopted.id
+  if (!folder) {
+    throw new Error(translateNow('sidebar.projects.moveNoFolder'))
   }
 
-  // Filing into a project takes the chat OUT of any group: a group outranks a project for
-  // placement, so leaving the group set would file it somewhere the user can't see it land.
-  await fileSession(sessionId, { groupId: null, projectId }, profile)
+  // Moving to a project takes the chat out of any group: a group outranks project
+  // placement, so leaving it set would land the chat somewhere the user can't see it.
+  await moveSessionWorkspace(sessionId, folder, profile)
+  await setSessionGroup(sessionId, null, profile)
 }
 
 // ── Project management dialog ────────────────────────────────────────────────

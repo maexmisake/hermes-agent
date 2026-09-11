@@ -493,34 +493,20 @@ describe('liveSessionProjectId', () => {
     ).toBe('p_app')
   })
 
-  it('lets an EXPLICIT filing outrank the folder match', () => {
-    // Filing is organization only, so the chosen project wins even though the cwd
-    // sits inside another project's folder. Mirrors `_project_for_session`.
-    const session = makeCwdSession('/www/app/src', { git_repo_root: '/www/app', project_id: 'p_other' })
+  it('answers with the project that owns the folder, and nothing can override it', () => {
+    // A project IS a working folder, so there is no stored id that could make a chat
+    // claim Beta while its files and terminal are inside Alpha. Mirrors
+    // `_project_for_session` in tui_gateway/project_tree.py.
+    const session = makeCwdSession('/www/app/src', { git_repo_root: '/www/app' })
 
-    expect(liveSessionProjectId(session, [makeProject('p_app', ['/www/app']), makeProject('p_other', ['/elsewhere'])])).toBe(
-      'p_other'
-    )
+    expect(
+      liveSessionProjectId(session, [makeProject('p_app', ['/www/app']), makeProject('p_other', ['/elsewhere'])])
+    ).toBe('p_app')
   })
 
-  it('places an EXPLICITLY filed session that has no workspace at all', () => {
-    // The point of filing: a folder-less chat can still belong to a project.
-    expect(liveSessionProjectId(makeCwdSession(null, { project_id: 'p_app' }), [makeProject('p_app', ['/www/app'])])).toBe(
-      'p_app'
-    )
-  })
-
-  it('falls back to folder placement when the filed project resolves to nothing', () => {
-    // Deleted project, or a row that came from another profile. A dangling id must
-    // never orphan the chat — fail open, exactly as the backend does.
-    const session = makeCwdSession('/www/app/src', { git_repo_root: '/www/app', project_id: 'p_gone' })
-
-    expect(liveSessionProjectId(session, [makeProject('p_app', ['/www/app'])])).toBe('p_app')
-  })
-
-  it('ignores a filing into an ARCHIVED project', () => {
-    const archived = { ...makeProject('p_old', ['/elsewhere']), archived: true }
-    const session = makeCwdSession('/www/app/src', { git_repo_root: '/www/app', project_id: 'p_old' })
+  it('ignores an ARCHIVED project that used to own the folder', () => {
+    const archived = { ...makeProject('p_old', ['/www']), archived: true }
+    const session = makeCwdSession('/www/app/src', { git_repo_root: '/www/app' })
 
     expect(liveSessionProjectId(session, [makeProject('p_app', ['/www/app']), archived])).toBe('p_app')
   })

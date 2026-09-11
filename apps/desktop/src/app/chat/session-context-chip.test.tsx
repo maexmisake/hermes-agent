@@ -18,8 +18,8 @@ vi.mock('@/store/projects', async importOriginal => ({
   listRepoBranches: vi.fn(),
   moveSessionWorkspace: vi.fn(),
   pickProjectFolder: vi.fn(),
-  startWorkInRepo: vi.fn(),
-  switchBranchInRepo: vi.fn()
+  setSessionGroup: vi.fn(),
+  startWorkInRepo: vi.fn()
 }))
 
 const coding = await import('@/store/coding-status')
@@ -30,7 +30,6 @@ const listRepoBranches = vi.mocked(projectsStore.listRepoBranches)
 const moveSessionWorkspace = vi.mocked(projectsStore.moveSessionWorkspace)
 const pickProjectFolder = vi.mocked(projectsStore.pickProjectFolder)
 const startWorkInRepo = vi.mocked(projectsStore.startWorkInRepo)
-const switchBranchInRepo = vi.mocked(projectsStore.switchBranchInRepo)
 const { $groups, $projects } = projectsStore
 
 const { SessionContextChip } = await import('./session-context-chip')
@@ -70,87 +69,119 @@ beforeEach(() => {
   isGitRepoPath.mockResolvedValue(false)
   listRepoBranches.mockResolvedValue([])
   moveSessionWorkspace.mockResolvedValue()
-  switchBranchInRepo.mockResolvedValue()
   startWorkInRepo.mockResolvedValue(null)
 })
 
 afterEach(cleanup)
 
-const openChip = () => fireEvent.keyDown(screen.getByRole('button', { name: /^App|^app|^Tidying/ }), { key: 'Enter' })
+const openChip = () => fireEvent.keyDown(screen.getByRole('button', { name: /, on main$/ }), { key: 'Enter' })
+const openSub = async (name: RegExp) => fireEvent.keyDown(await screen.findByRole('menuitem', { name }), { key: 'Enter' })
 
 describe('the context chip beside a chat title', () => {
-  it('reads the project it is FILED under, not the folder it runs in', () => {
-    // The two can differ, and that is the point of filing: a chat can be kept with
-    // the App project while running in a scratch folder. The caption follows the
-    // filing, because that is the answer to "what is this chat about".
+  it('names the project that owns the chat folder', () => {
+    // One answer, derived from the folder. There is no stored id that could make this
+    // say "App" while the chat's files are somewhere else entirely.
     $projects.set([project()])
 
-    render(<SessionContextChip session={session({ cwd: '/scratch/vps', project_id: 'p_app' })} />)
+    render(<SessionContextChip session={session()} />)
 
     expect(screen.getByRole('button', { name: 'App, on main' })).toBeTruthy()
   })
 
-  it('names a group over a project, matching where the sidebar drew it', () => {
-    $projects.set([project()])
-    $groups.set([{ id: 'g_1', name: 'Tidying' } as GroupInfo])
+  it('falls back to the folder name when no project claims it', () => {
+    render(<SessionContextChip session={session({ cwd: '/scratch/vps', git_repo_root: '' })} />)
 
-    render(<SessionContextChip session={session({ group_id: 'g_1', project_id: 'p_app' })} />)
-
-    expect(screen.getByRole('button', { name: 'Tidying, on main' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'vps, on main' })).toBeTruthy()
   })
 
-  it('falls back to the folder name when nothing filed it', () => {
-    render(<SessionContextChip session={session()} />)
-
-    expect(screen.getByRole('button', { name: 'app, on main' })).toBeTruthy()
-  })
-
-  it('renders nothing at all for a chat with no place and no branch', () => {
-    const { container } = render(<SessionContextChip session={session({ cwd: '', git_branch: '', git_repo_root: '' })} />)
+  it('renders nothing at all for a chat with no folder and no branch', () => {
+    const { container } = render(
+      <SessionContextChip session={session({ cwd: '', git_branch: '', git_repo_root: '' })} />
+    )
 
     // An empty chip would be a caption saying nothing. The title stands alone.
     expect(container.textContent).toBe('')
   })
 
-  it('shows the full path for inspection, which is what it is mostly opened for', async () => {
+  it('shows the full path for inspection, and the group when there is one', async () => {
     $projects.set([project()])
-    render(<SessionContextChip session={session({ cwd: '/repo/app/packages/ui', project_id: 'p_app' })} />)
+    $groups.set([{ id: 'g_1', name: 'Tidying' } as GroupInfo])
+
+    render(<SessionContextChip session={session({ cwd: '/repo/app/packages/ui', group_id: 'g_1' })} />)
 
     openChip()
 
     expect(await screen.findByText('/repo/app/packages/ui')).toBeTruthy()
+    // A group is the other axis: it tidies the chat without moving it, so both facts
+    // are true at once and the menu says both.
+    expect(await screen.findByText('In Tidying')).toBeTruthy()
   })
 
-  it('switches branch in place rather than re-homing the chat', async () => {
+  it('never switches a shared checkout to reach a branch', async () => {
     isGitRepoPath.mockResolvedValue(true)
     listRepoBranches.mockResolvedValue([branch({ isDefault: true, name: 'main' }), branch({ name: 'feature' })])
+    startWorkInRepo.mockResolvedValue({ branch: 'feature', path: '/repo/app-feature' })
 
     render(<SessionContextChip session={session()} />)
-
     await waitFor(() => expect(listRepoBranches).toHaveBeenCalledWith('/repo/app'))
 
     openChip()
-    fireEvent.keyDown(await screen.findByRole('menuitem', { name: /Branch/ }), { key: 'Enter' })
+    await openSub(/Branch/)
     fireEvent.click(await screen.findByRole('menuitem', { name: /feature/ }))
 
-    // The conversation is already anchored here: changing branch means this
-    // checkout, not a new folder underneath it.
-    await waitFor(() => expect(switchBranchInRepo).toHaveBeenCalledWith('/repo/app', 'feature'))
-    expect(moveSessionWorkspace).not.toHaveBeenCalled()
+    // The same rule as the new-chat picker: the branch gets its own checkout and THIS
+    // chat moves there. Checking it out in /repo/app would change the files under any
+    // other session sitting in that folder, possibly mid-turn.
+    await waitFor(() => expect(startWorkInRepo).toHaveBeenCalledWith('/repo/app', { existingBranch: 'feature' }))
+    await waitFor(() => expect(moveSessionWorkspace).toHaveBeenCalledWith('sess-1', '/repo/app-feature', undefined))
   })
 
-  it('asks before changing the folder, because that re-homes a live agent', async () => {
+  it('reuses a branch that already has a checkout instead of making another', async () => {
+    isGitRepoPath.mockResolvedValue(true)
+    listRepoBranches.mockResolvedValue([
+      branch({ isDefault: true, name: 'main' }),
+      branch({ name: 'feature', worktreePath: '/repo/app-feature' })
+    ])
+
+    render(<SessionContextChip session={session()} />)
+    await waitFor(() => expect(listRepoBranches).toHaveBeenCalledWith('/repo/app'))
+
+    openChip()
+    await openSub(/Branch/)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /feature/ }))
+
+    await waitFor(() => expect(moveSessionWorkspace).toHaveBeenCalledWith('sess-1', '/repo/app-feature', undefined))
+    expect(startWorkInRepo).not.toHaveBeenCalled()
+  })
+
+  it('asks before moving the chat to another project, because that moves its files', async () => {
+    $projects.set([project(), project({ id: 'p_site', name: 'Site', primary_path: '/repo/site' })])
+
+    render(<SessionContextChip session={session()} />)
+
+    openChip()
+    await openSub(/Work in another project/)
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Site' }))
+
+    // Groups never ask. This does: the chat's terminal and file tools follow.
+    await waitFor(() => expect(screen.getByText(/Move this chat\?/)).toBeTruthy())
+    expect(moveSessionWorkspace).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Move it' }))
+
+    await waitFor(() => expect(moveSessionWorkspace).toHaveBeenCalledWith('sess-1', '/repo/site', undefined))
+  })
+
+  it('also asks for a folder picked by hand', async () => {
     pickProjectFolder.mockResolvedValue('/other/repo')
     render(<SessionContextChip session={session()} />)
 
     openChip()
-    fireEvent.click(await screen.findByRole('menuitem', { name: /Change folder/ }))
+    await openSub(/Work in another project/)
+    fireEvent.click(await screen.findByRole('menuitem', { name: /Choose a folder/ }))
 
-    // Filing never asks. This one does: the chat's terminal and file tools follow.
-    await waitFor(() => expect(screen.getByText(/Move this chat to another folder/)).toBeTruthy())
-    expect(moveSessionWorkspace).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Change folder…' }))
+    await waitFor(() => expect(screen.getByText(/Move this chat\?/)).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: 'Move it' }))
 
     await waitFor(() => expect(moveSessionWorkspace).toHaveBeenCalledWith('sess-1', '/other/repo', undefined))
   })

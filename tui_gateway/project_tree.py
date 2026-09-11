@@ -318,19 +318,14 @@ class _FolderIndex:
         return None, -1
 
 
-def _project_for_session(
-        session: dict, index: _FolderIndex, resolve: Optional[Resolve],
-        by_id: Optional[dict] = None) -> Optional[dict]:
-    """The project owning ``session``: an explicit filing first, else the longest folder match.
+def _project_for_session(session: dict, index: _FolderIndex, resolve: Optional[Resolve]) -> Optional[dict]:
+    """The project owning ``session``: the longest folder match on its cwd.
 
-    An explicit ``project_id`` wins over every path heuristic, and applies even to a session with no
-    cwd at all — that is what makes filing a chat organization rather than a workspace move. A
-    ``project_id`` that resolves to nothing (project deleted, or a row copied between profiles) falls
-    through to folder placement instead of orphaning the row; a dangling id must never hide a chat.
+    This is the ONLY definition, and there is deliberately no stored override beside it. A project
+    IS a working folder, so "which project is this chat in" and "which folder does this chat run in"
+    are one question with one answer. A session with no cwd is in no project, which is the truthful
+    answer rather than a placement to be invented — tidying such a chat is what groups are for.
     """
-    filed = _field(session, "project_id")
-    if filed and (by_id or {}).get(filed) is not None:
-        return by_id[filed]
     cwd = _field(session, "cwd")
     if not cwd:
         return None
@@ -447,7 +442,6 @@ def build_tree(
     _junk_cwd = is_junk_cwd or (lambda _cwd: False)
     _exists = exists or (lambda _path: True)
     folder_index = _FolderIndex(active_projects)
-    projects_by_id = {str(p.get("id") or ""): p for p in active_projects if p.get("id")}
 
     group_defs = list(groups or [])
     live_group_ids = {str(g.get("id") or "") for g in group_defs if g.get("id")}
@@ -457,10 +451,10 @@ def build_tree(
         gid = _field(session, "group_id")
         (by_group.setdefault(gid, []) if gid in live_group_ids else ungrouped).append(session)
 
-    by_project: dict[str, list[dict]] = {}  # explicit project id -> owned rows
+    by_project: dict[str, list[dict]] = {}  # project id -> the rows whose cwd it owns
     unowned: list[dict] = []
     for session in ungrouped:
-        owner = _project_for_session(session, folder_index, resolve, projects_by_id)
+        owner = _project_for_session(session, folder_index, resolve)
         (by_project.setdefault(owner["id"], []) if owner else unowned).append(session)
 
     scoped_ids: list[str] = []

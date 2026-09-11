@@ -388,17 +388,10 @@ function isPathUnder(folder: string, target: string): boolean {
  * only the repo-root AUTO-project fallback needs cwd-under-root confidence.
  */
 export function liveSessionProjectId(session: SessionInfo, explicitProjects: ProjectInfo[]): null | string {
-  // An EXPLICIT filing outranks every path heuristic below, and applies even to a
-  // session with no cwd at all — that is what makes filing a chat organization rather
-  // than a workspace move. Mirrors `_project_for_session` in tui_gateway/project_tree.py,
-  // including the fail-open: an id no live project claims (deleted, or a row that came
-  // from another profile) falls through to folder placement instead of orphaning the row.
-  const filed = (session.project_id || '').trim()
-
-  if (filed && explicitProjects.some(project => project.id === filed && !project.archived)) {
-    return filed
-  }
-
+  // The folder decides, and nothing overrides it. A project IS a working folder, so
+  // "which project is this chat in" and "which folder does it run in" are one question
+  // — there is no stored id that could answer differently. Mirrors
+  // `_project_for_session` in tui_gateway/project_tree.py.
   const cwd = (session.cwd || '').trim()
   // A session may carry only a git_repo_root and no cwd — older/imported rows,
   // or ones captured before cwd tracking. The backend still groups those by repo

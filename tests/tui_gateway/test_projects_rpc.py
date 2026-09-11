@@ -890,10 +890,13 @@ def test_projects_without_a_profile_stay_on_the_launch_home(monkeypatch, tmp_pat
 
 
 
-# ── Session groups + explicit filing ─────────────────────────────────────────
-# The contract these guard: filing is ORGANIZATION ONLY. `session.filing.set` must
+# ── Session groups ───────────────────────────────────────────────────────────
+# The contract these guard: a group is ORGANIZATION ONLY. `session.group.set` must
 # never touch cwd or git identity — that is the whole reason it exists beside
 # `session.workspace.move`, which deliberately does.
+#
+# There is no project equivalent, and one of these pins that too: a project IS a
+# working folder, so moving a chat into one is `session.workspace.move`.
 
 
 def _session_row(home: Path, session_id: str) -> dict:
@@ -937,33 +940,43 @@ def test_groups_update_rejects_an_unknown_id(tmp_path):
         assert resp.get("error", {}).get("code") == 5062
 
 
-def test_filing_a_session_never_moves_its_workspace(tmp_path):
-    """The bug this replaces: "move to project" used to re-home the conversation's files."""
+def test_grouping_a_session_never_moves_its_workspace(tmp_path):
+    """The bug this replaces: "move to project" used to re-home the conversation's files.
+    Tidying a chat into a bucket must leave its folder, and therefore its project, alone."""
     home = tmp_path / "home"
     workspace = tmp_path / "work" / "repo"
     workspace.mkdir(parents=True)
     home.mkdir(parents=True)
-    _create_session(home, "s-filed", workspace)
+    _create_session(home, "s-grouped", workspace)
 
     with _serving_launch_profile(home):
-        project = _call("projects.create", {"name": "Alpha", "folders": [str(tmp_path / "elsewhere")]})["project"]
         group = _call("projects.groups.create", {"name": "Shipping"})["group"]
 
-        result = _call(
-            "session.filing.set",
-            {"session_key": "s-filed", "project_id": project["id"], "group_id": group["id"]},
-        )
-        assert result["project_id"] == project["id"]
+        result = _call("session.group.set", {"session_key": "s-grouped", "group_id": group["id"]})
         assert result["group_id"] == group["id"]
 
-    row = _session_row(home, "s-filed")
-    assert row["project_id"] == project["id"]
+    row = _session_row(home, "s-grouped")
     assert row["group_id"] == group["id"]
     # The whole point: the workspace is untouched.
     assert row["cwd"] == str(workspace)
 
 
-def test_filing_clears_with_an_empty_string_and_leaves_omitted_fields_alone(tmp_path):
+def test_a_session_carries_no_project_of_its_own(tmp_path):
+    """A project IS a working folder, so there is nothing to store: the session row has a cwd and
+    that is the answer. No RPC can make a chat claim a project its files are not in."""
+    home = tmp_path / "home"
+    workspace = tmp_path / "work" / "repo"
+    workspace.mkdir(parents=True)
+    home.mkdir(parents=True)
+    _create_session(home, "s-plain", workspace)
+
+    with _serving_launch_profile(home):
+        assert "session.filing.set" not in server._methods
+
+    assert "project_id" not in _session_row(home, "s-plain")
+
+
+def test_ungrouping_clears_with_an_empty_string(tmp_path):
     home = tmp_path / "home"
     workspace = tmp_path / "work"
     workspace.mkdir(parents=True)
@@ -971,33 +984,29 @@ def test_filing_clears_with_an_empty_string_and_leaves_omitted_fields_alone(tmp_
     _create_session(home, "s-clear", workspace)
 
     with _serving_launch_profile(home):
-        project = _call("projects.create", {"name": "Alpha", "folders": [str(workspace)]})["project"]
         group = _call("projects.groups.create", {"name": "Shipping"})["group"]
-        _call("session.filing.set",
-              {"session_key": "s-clear", "project_id": project["id"], "group_id": group["id"]})
+        _call("session.group.set", {"session_key": "s-clear", "group_id": group["id"]})
 
-        # Only project_id named: group_id must survive untouched.
-        after = _call("session.filing.set", {"session_key": "s-clear", "project_id": ""})
-        assert after["project_id"] is None
-        assert after["group_id"] == group["id"]
+        after = _call("session.group.set", {"session_key": "s-clear", "group_id": ""})
+        assert after["group_id"] is None
 
 
-def test_filing_requires_a_session_and_at_least_one_field(tmp_path):
+def test_grouping_requires_a_session_and_a_group_field(tmp_path):
     home = tmp_path / "home"
     home.mkdir(parents=True)
     _create_session(home, "s-real", tmp_path)
     with _serving_launch_profile(home):
-        missing_key = server._methods["session.filing.set"](1, {"project_id": "p_x"})
+        missing_key = server._methods["session.group.set"](1, {"group_id": "g_x"})
         assert missing_key.get("error", {}).get("code") == 4007
 
-        nothing_to_do = server._methods["session.filing.set"](1, {"session_key": "s-real"})
+        nothing_to_do = server._methods["session.group.set"](1, {"session_key": "s-real"})
         assert nothing_to_do.get("error", {}).get("code") == 4016
 
-        unknown = server._methods["session.filing.set"](1, {"session_key": "nope", "project_id": "p_x"})
+        unknown = server._methods["session.group.set"](1, {"session_key": "nope", "group_id": "g_x"})
         assert unknown.get("error", {}).get("code") == 4007
 
 
-def test_deleting_a_group_unfiles_its_sessions(tmp_path):
+def test_deleting_a_group_ungroups_its_sessions(tmp_path):
     home = tmp_path / "home"
     workspace = tmp_path / "work"
     workspace.mkdir(parents=True)
@@ -1006,7 +1015,7 @@ def test_deleting_a_group_unfiles_its_sessions(tmp_path):
 
     with _serving_launch_profile(home):
         group = _call("projects.groups.create", {"name": "Shipping"})["group"]
-        _call("session.filing.set", {"session_key": "s-orphan", "group_id": group["id"]})
+        _call("session.group.set", {"session_key": "s-orphan", "group_id": group["id"]})
         assert _session_row(home, "s-orphan")["group_id"] == group["id"]
 
         _call("projects.groups.delete", {"id": group["id"]})
@@ -1014,7 +1023,7 @@ def test_deleting_a_group_unfiles_its_sessions(tmp_path):
     assert _session_row(home, "s-orphan")["group_id"] is None
 
 
-def test_project_tree_reports_groups_and_honours_filing(tmp_path):
+def test_project_tree_reports_groups_and_honours_them(tmp_path):
     home = tmp_path / "home"
     workspace = tmp_path / "work" / "repo"
     workspace.mkdir(parents=True)
@@ -1024,7 +1033,7 @@ def test_project_tree_reports_groups_and_honours_filing(tmp_path):
 
     with _serving_launch_profile(home):
         group = _call("projects.groups.create", {"name": "Shipping"})["group"]
-        _call("session.filing.set", {"session_key": "s-grouped", "group_id": group["id"]})
+        _call("session.group.set", {"session_key": "s-grouped", "group_id": group["id"]})
 
         tree = _call("projects.tree", {})
         node = next(g for g in tree["groups"] if g["id"] == group["id"])

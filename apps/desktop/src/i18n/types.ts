@@ -2449,11 +2449,12 @@ export interface Translations {
       menuAddFolder: string
       menuSetActive: string
       menuDelete: string
-      moveToProject: string
+      addToGroup: string
       movedTo: (name: string) => string
       moveFailed: string
       moveNoFolder: string
-      moveNoProjects: string
+      moveNoGroups: string
+      moveNoGroup: string
       reveal: string
       copyPath: string
       removeFromSidebar: string
@@ -2563,15 +2564,18 @@ export interface Translations {
       label: (place: string, branch: string) => string
       folderTitle: string
       noFolder: string
-      fileUnder: string
+      inGroup: (name: string) => string
+      addToGroup: string
       branchTitle: string
       branchSwitched: (branch: string) => string
       branchFailed: string
-      changeFolder: string
-      folderMoveTitle: string
-      folderMoveConfirm: (folder: string) => string
-      folderMoved: (folder: string) => string
-      folderMoveFailed: string
+      changeProject: string
+      chooseFolder: string
+      moveTitle: string
+      moveConfirm: (place: string) => string
+      moveConfirmLabel: string
+      moved: (place: string) => string
+      moveFailed: string
     }
   }
 
@@ -2708,10 +2712,6 @@ export interface Translations {
       noProject: string
       newProject: string
       projectFailed: string
-      folderTitle: string
-      noFolder: string
-      chooseFolder: string
-      folderFailed: string
       branchTitle: string
       noBranch: string
       branchSearch: string
