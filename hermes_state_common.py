@@ -341,6 +341,16 @@ CREATE TABLE IF NOT EXISTS sessions (
     hidden INTEGER NOT NULL DEFAULT 0,
     last_read_at REAL,
     tool_names TEXT,
+    -- Explicit filing. ORGANIZATION ONLY: neither column ever implies a workspace
+    -- change, and nothing derives a cwd from them. `project_id` is a projects.db
+    -- row the user filed this session under, overriding the cwd-derived project
+    -- the sidebar tree would otherwise compute; `group_id` is a session_groups
+    -- row and outranks the project for placement (a grouped row renders under its
+    -- group, labelled with the project it came from). Both NULL = derive from cwd,
+    -- the pre-filing behaviour. Added via SCHEMA_SQL column reconciliation, so an
+    -- older store upgrades in place with no migration.
+    project_id TEXT,
+    group_id TEXT,
     FOREIGN KEY (parent_session_id) REFERENCES sessions(id),
     FOREIGN KEY (system_prompt_hash) REFERENCES system_prompts(hash)
 );

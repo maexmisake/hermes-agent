@@ -32,7 +32,7 @@ import {
   workspaceCwdForNewSession
 } from '@/store/session'
 import { $removedSessionIds, $sessionMutationsInFlight } from '@/store/session-removal'
-import type { ProjectInfo, ProjectsPayload } from '@/types/hermes'
+import type { GroupInfo, GroupsPayload, ProjectInfo, ProjectsPayload, SessionInfo } from '@/types/hermes'
 
 // First-class, per-profile Projects (named, multi-folder workspaces). State is
 // served by the live gateway's `projects.*` JSON-RPC methods, which wrap the
@@ -375,6 +375,9 @@ export async function refreshProjects(): Promise<void> {
 
 interface ProjectTreePayload {
   projects: SidebarProjectTree[]
+  /** Group buckets, shaped exactly like project nodes (`isGroup: true`) so the
+   *  sidebar renders both with one row component. Absent from an older backend. */
+  groups?: SidebarProjectTree[]
   active_id: null | string
   scoped_session_ids: string[]
 }
@@ -392,6 +395,9 @@ let projectTreeRefreshGeneration = 0
 function applyProjectTreePayload(res: ProjectTreePayload): void {
   const scoped = new Set(res.scoped_session_ids ?? [])
   $projectTree.set(res.projects ?? [])
+  // `?? []` is the compatibility rung, not a default: a backend predating groups omits the
+  // key entirely, and clearing the cache is right there — it genuinely has no groups to show.
+  $groupTree.set(res.groups ?? [])
   $activeProjectId.set(res.active_id ?? null)
   const tombstones = $removedSessionIds.get()
 
@@ -1115,6 +1121,178 @@ export async function deleteProject(id: string): Promise<void> {
 export async function setActiveProject(id: null | string): Promise<void> {
   const res = await gatewayRequest<{ active_id: null | string }>('projects.set_active', projectParams({ id }))
   $activeProjectId.set(res.active_id ?? null)
+}
+
+// ── Session groups ───────────────────────────────────────────────────────────
+// Flat, user-named buckets for tidying chats. Definitions live in the same per-profile
+// store projects do, so they ride the same transport and the same profile scoping.
+// A group NEVER resolves to a folder — that asymmetry is what makes filing a chat into
+// one organization rather than a workspace move.
+
+/** Group definitions, in the user's hand-picked order. */
+export const $groups = atom<GroupInfo[]>([])
+
+/** Group buckets from `projects.tree`, shaped like project nodes so the sidebar
+ *  renders both with one row component. */
+export const $groupTree = atom<SidebarProjectTree[]>([])
+
+let groupsRefreshGeneration = 0
+
+/** Pull the group list. Best-effort: a failure leaves the cached list intact. */
+export async function refreshGroups(): Promise<void> {
+  const generation = ++groupsRefreshGeneration
+
+  try {
+    const context = await activeProjectsContext()
+
+    const payload = await gatewayRequestOn<GroupsPayload>(
+      context.gateway,
+      'projects.groups.list',
+      projectParams({}, context.profile)
+    )
+
+    if (generation === groupsRefreshGeneration && stillOnProjectsContext(context)) {
+      $groups.set(payload.groups ?? [])
+      markProjectsRpcSuccess()
+    }
+  } catch (err) {
+    markProjectsRpcFailure(err)
+  }
+}
+
+/** Apply a `groups.*` write's authoritative list and re-pull the tree the rows render from. */
+function applyGroupsPayload(payload: { groups?: GroupInfo[] }): void {
+  $groups.set(payload.groups ?? [])
+  void refreshProjectTree()
+}
+
+export async function createGroup(name: string, options?: { color?: string }): Promise<GroupInfo | null> {
+  const res = await gatewayRequest<{ group: GroupInfo | null; groups: GroupInfo[] }>(
+    'projects.groups.create',
+    projectParams({ name, ...(options?.color ? { color: options.color } : {}) })
+  )
+
+  applyGroupsPayload(res)
+
+  return res.group ?? null
+}
+
+/** Patch a group. `color: null` clears it (the backend reads `""` as "clear"). */
+export async function updateGroup(
+  id: string,
+  patch: { name?: string; color?: null | string }
+): Promise<void> {
+  const snapshot = $groups.get()
+
+  $groups.set(
+    snapshot.map(group =>
+      group.id === id
+        ? { ...group, ...(patch.name !== undefined && { name: patch.name }), ...(patch.color !== undefined && { color: patch.color }) }
+        : group
+    )
+  )
+
+  try {
+    applyGroupsPayload(
+      await gatewayRequest<{ groups: GroupInfo[] }>(
+        'projects.groups.update',
+        projectParams({ id, ...patch, ...(patch.color === null && { color: '' }) })
+      )
+    )
+  } catch (err) {
+    $groups.set(snapshot)
+    throw err
+  }
+}
+
+export async function deleteGroup(id: string): Promise<void> {
+  const snapshot = $groups.get()
+
+  $groups.set(snapshot.filter(group => group.id !== id))
+
+  try {
+    applyGroupsPayload(await gatewayRequest<{ groups: GroupInfo[] }>('projects.groups.delete', projectParams({ id })))
+  } catch (err) {
+    $groups.set(snapshot)
+    throw err
+  }
+}
+
+export async function reorderGroups(ids: string[]): Promise<void> {
+  const snapshot = $groups.get()
+  const byId = new Map(snapshot.map(group => [group.id, group]))
+
+  $groups.set([
+    ...ids.map(id => byId.get(id)).filter((group): group is GroupInfo => Boolean(group)),
+    ...snapshot.filter(group => !ids.includes(group.id))
+  ])
+
+  try {
+    await gatewayRequest('projects.groups.reorder', projectParams({ ids }))
+    void refreshProjectTree()
+  } catch (err) {
+    $groups.set(snapshot)
+    throw err
+  }
+}
+
+/**
+ * File a session under a project and/or a group. ORGANIZATION ONLY.
+ *
+ * The split from {@link moveSessionToProject} is the entire point: that one re-homes the
+ * conversation's workspace (cwd AND git identity, via `session.workspace.move`), this one
+ * touches neither. The sidebar's drag and its "Move to project" menu use THIS, so tidying a
+ * chat can never relocate the agent's files — the behaviour that made dragging a session
+ * between projects quietly repoint its terminal and file tools at another checkout.
+ *
+ * `undefined` leaves a field alone; `null` clears it back to cwd-derived placement.
+ */
+export async function fileSession(
+  sessionId: string,
+  filing: { groupId?: null | string; projectId?: null | string },
+  profile?: null | string
+): Promise<void> {
+  const params: Record<string, unknown> = { session_key: sessionId, ...(profile ? { profile } : {}) }
+
+  if (filing.projectId !== undefined) {
+    params.project_id = filing.projectId ?? ''
+  }
+
+  if (filing.groupId !== undefined) {
+    params.group_id = filing.groupId ?? ''
+  }
+
+  // Paint first, reconcile after. Roll back only THIS row's filing rather than restoring a
+  // whole snapshot, so a concurrent list refresh isn't clobbered by a failed write.
+  const before = $sessions.get().find(session => sessionMatchesStoredId(session, sessionId))
+
+  const applyFiling = (session: SessionInfo, next: Pick<SessionInfo, 'group_id' | 'project_id'>): SessionInfo => ({
+    ...session,
+    ...(filing.projectId !== undefined && { project_id: next.project_id ?? null }),
+    ...(filing.groupId !== undefined && { group_id: next.group_id ?? null })
+  })
+
+  setSessions(prev =>
+    prev.map(session =>
+      sessionMatchesStoredId(session, sessionId)
+        ? applyFiling(session, { group_id: filing.groupId ?? null, project_id: filing.projectId ?? null })
+        : session
+    )
+  )
+
+  try {
+    await gatewayRequest('session.filing.set', params)
+  } catch (err) {
+    if (before) {
+      setSessions(prev =>
+        prev.map(session => (sessionMatchesStoredId(session, sessionId) ? applyFiling(session, before) : session))
+      )
+    }
+
+    throw err
+  }
+
+  void refreshProjectTree()
 }
 
 // ── Project management dialog ────────────────────────────────────────────────

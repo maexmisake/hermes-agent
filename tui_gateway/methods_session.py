@@ -351,6 +351,11 @@ def _(rid, params: dict) -> dict:
             "model_override": session_model_override,
             "create_reasoning_override": create_reasoning_override,
             "create_service_tier_override": create_service_tier_override,
+            # Filing chosen in the composer's setup row before the first message. Held on the
+            # record and written by _ensure_session_db_row with the rest of the lazy row; it never
+            # influences cwd, which session.create resolves independently above.
+            "project_id": _str_param(params, "project_id") or None,
+            "group_id": _str_param(params, "group_id") or None,
             "parent_session_id": parent_session_id, "pending_title": _str_param(params, "title") or None,
             "pending_hidden": _flag(params, "hidden"), "room_plumbing": _flag(params, "room_plumbing"),
             "follow_profile_config": _flag(params, "follow_profile_config"),
@@ -870,6 +875,42 @@ def _(rid, params: dict, session: dict) -> dict:
     info = _cwd_info(session, cwd)
     _emit("session.info", params.get("session_id", ""), info)
     return _ok(rid, info)
+
+
+def _filing_param(params: dict, key: str):
+    """Filing tri-state: key absent -> ``None`` (leave alone); present but empty/null -> ``""``
+    (clear, back to cwd-derived placement); otherwise the trimmed id."""
+    return None if key not in params else str(params.get(key) or "").strip()
+
+
+@method("session.filing.set")
+def _(rid, params: dict) -> dict:
+    """File a STORED session under a project and/or a group.
+
+    ORGANIZATION ONLY, and that is the entire point of it existing beside ``session.workspace.move``:
+    this handler never reads or writes cwd or git identity, so filing a chat into a project can never
+    relocate the agent's workspace. ``{"project_id": ""}`` clears the filing. No live agent is
+    required — filing is a property of the stored row, not of a running turn.
+    """
+    if not (target := _str_param(params, "session_key")):
+        return _err(rid, 4007, "session_key required")
+    if "project_id" not in params and "group_id" not in params:
+        return _err(rid, 4016, "project_id or group_id required")
+    with _profile_db(params) as db:
+        if db is None:
+            return _db_unavailable_error(rid, code=5007)
+        if not db.get_session(target):
+            return _err(rid, 4007, "session not found")
+        try:
+            db.set_session_filing(
+                target,
+                project_id=_filing_param(params, "project_id"),
+                group_id=_filing_param(params, "group_id"))
+        except Exception as e:
+            return _err(rid, 5007, f"filing failed: {e}")
+        row = db.get_session(target) or {}
+    return _ok(rid, {"session_key": target, "project_id": row.get("project_id"),
+                     "group_id": row.get("group_id")})
 
 
 @method("session.workspace.move")

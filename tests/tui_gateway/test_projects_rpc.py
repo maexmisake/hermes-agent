@@ -888,3 +888,152 @@ def test_projects_without_a_profile_stay_on_the_launch_home(monkeypatch, tmp_pat
     assert not (Path(os.environ["HERMES_HOME"]) / "projects.db").exists()
 
 
+
+
+# ── Session groups + explicit filing ─────────────────────────────────────────
+# The contract these guard: filing is ORGANIZATION ONLY. `session.filing.set` must
+# never touch cwd or git identity — that is the whole reason it exists beside
+# `session.workspace.move`, which deliberately does.
+
+
+def _session_row(home: Path, session_id: str) -> dict:
+    from hermes_state import SessionDB
+
+    db = SessionDB(db_path=home / "state.db")
+    try:
+        return dict(db.get_session(session_id) or {})
+    finally:
+        db.close()
+
+
+def test_groups_crud_round_trip(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir(parents=True)
+    with _serving_launch_profile(home):
+        assert _call("projects.groups.list")["groups"] == []
+
+        created = _call("projects.groups.create", {"name": "Shipping Friday", "color": "#0053fd"})["group"]
+        assert created["name"] == "Shipping Friday" and created["id"].startswith("g_")
+
+        second = _call("projects.groups.create", {"name": "Admin"})["group"]
+        assert [g["name"] for g in _call("projects.groups.list")["groups"]] == ["Shipping Friday", "Admin"]
+
+        _call("projects.groups.reorder", {"ids": [second["id"], created["id"]]})
+        assert [g["name"] for g in _call("projects.groups.list")["groups"]] == ["Admin", "Shipping Friday"]
+
+        _call("projects.groups.update", {"id": created["id"], "name": "Shipping Monday", "color": ""})
+        renamed = next(g for g in _call("projects.groups.list")["groups"] if g["id"] == created["id"])
+        assert renamed["name"] == "Shipping Monday" and renamed["color"] is None
+
+        left = _call("projects.groups.delete", {"id": second["id"]})["groups"]
+        assert [g["id"] for g in left] == [created["id"]]
+
+
+def test_groups_update_rejects_an_unknown_id(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir(parents=True)
+    with _serving_launch_profile(home):
+        resp = server._methods["projects.groups.update"](1, {"id": "g_nope", "name": "x"})
+        assert resp.get("error", {}).get("code") == 5062
+
+
+def test_filing_a_session_never_moves_its_workspace(tmp_path):
+    """The bug this replaces: "move to project" used to re-home the conversation's files."""
+    home = tmp_path / "home"
+    workspace = tmp_path / "work" / "repo"
+    workspace.mkdir(parents=True)
+    home.mkdir(parents=True)
+    _create_session(home, "s-filed", workspace)
+
+    with _serving_launch_profile(home):
+        project = _call("projects.create", {"name": "Alpha", "folders": [str(tmp_path / "elsewhere")]})["project"]
+        group = _call("projects.groups.create", {"name": "Shipping"})["group"]
+
+        result = _call(
+            "session.filing.set",
+            {"session_key": "s-filed", "project_id": project["id"], "group_id": group["id"]},
+        )
+        assert result["project_id"] == project["id"]
+        assert result["group_id"] == group["id"]
+
+    row = _session_row(home, "s-filed")
+    assert row["project_id"] == project["id"]
+    assert row["group_id"] == group["id"]
+    # The whole point: the workspace is untouched.
+    assert row["cwd"] == str(workspace)
+
+
+def test_filing_clears_with_an_empty_string_and_leaves_omitted_fields_alone(tmp_path):
+    home = tmp_path / "home"
+    workspace = tmp_path / "work"
+    workspace.mkdir(parents=True)
+    home.mkdir(parents=True)
+    _create_session(home, "s-clear", workspace)
+
+    with _serving_launch_profile(home):
+        project = _call("projects.create", {"name": "Alpha", "folders": [str(workspace)]})["project"]
+        group = _call("projects.groups.create", {"name": "Shipping"})["group"]
+        _call("session.filing.set",
+              {"session_key": "s-clear", "project_id": project["id"], "group_id": group["id"]})
+
+        # Only project_id named: group_id must survive untouched.
+        after = _call("session.filing.set", {"session_key": "s-clear", "project_id": ""})
+        assert after["project_id"] is None
+        assert after["group_id"] == group["id"]
+
+
+def test_filing_requires_a_session_and_at_least_one_field(tmp_path):
+    home = tmp_path / "home"
+    home.mkdir(parents=True)
+    _create_session(home, "s-real", tmp_path)
+    with _serving_launch_profile(home):
+        missing_key = server._methods["session.filing.set"](1, {"project_id": "p_x"})
+        assert missing_key.get("error", {}).get("code") == 4007
+
+        nothing_to_do = server._methods["session.filing.set"](1, {"session_key": "s-real"})
+        assert nothing_to_do.get("error", {}).get("code") == 4016
+
+        unknown = server._methods["session.filing.set"](1, {"session_key": "nope", "project_id": "p_x"})
+        assert unknown.get("error", {}).get("code") == 4007
+
+
+def test_deleting_a_group_unfiles_its_sessions(tmp_path):
+    home = tmp_path / "home"
+    workspace = tmp_path / "work"
+    workspace.mkdir(parents=True)
+    home.mkdir(parents=True)
+    _create_session(home, "s-orphan", workspace)
+
+    with _serving_launch_profile(home):
+        group = _call("projects.groups.create", {"name": "Shipping"})["group"]
+        _call("session.filing.set", {"session_key": "s-orphan", "group_id": group["id"]})
+        assert _session_row(home, "s-orphan")["group_id"] == group["id"]
+
+        _call("projects.groups.delete", {"id": group["id"]})
+
+    assert _session_row(home, "s-orphan")["group_id"] is None
+
+
+def test_project_tree_reports_groups_and_honours_filing(tmp_path):
+    home = tmp_path / "home"
+    workspace = tmp_path / "work" / "repo"
+    workspace.mkdir(parents=True)
+    home.mkdir(parents=True)
+    _create_session(home, "s-grouped", workspace)
+    _create_session(home, "s-loose", workspace)
+
+    with _serving_launch_profile(home):
+        group = _call("projects.groups.create", {"name": "Shipping"})["group"]
+        _call("session.filing.set", {"session_key": "s-grouped", "group_id": group["id"]})
+
+        tree = _call("projects.tree", {})
+        node = next(g for g in tree["groups"] if g["id"] == group["id"])
+        assert node["label"] == "Shipping" and node["isGroup"] is True
+        assert node["sessionCount"] == 1
+        assert [s["id"] for s in node["previewSessions"]] == ["s-grouped"]
+        # A grouped row is claimed, so the flat list must not also show it.
+        assert "s-grouped" in tree["scoped_session_ids"]
+        # The loose row is still placed the old way.
+        assert any(
+            "s-loose" in [s["id"] for s in (p.get("previewSessions") or [])] for p in tree["projects"]
+        )

@@ -572,6 +572,15 @@ export interface SessionInfo {
    *  groups by this instead of probing git in the GUI. Null for non-git
    *  workspaces and not-yet-backfilled rows. */
   git_repo_root?: null | string
+  /** A project this session was EXPLICITLY filed under, overriding the cwd-derived
+   *  placement above. Organization only: filing a chat never moves its workspace, so
+   *  this can name a project whose folders have nothing to do with {@link cwd}. Null
+   *  means "derive from cwd", which is every pre-filing row. */
+  project_id?: null | string
+  /** A session group this chat was filed into. Outranks {@link project_id} for
+   *  placement — a grouped row renders under its group, labelled with the project it
+   *  came from, so it never appears in two places at once. */
+  group_id?: null | string
   ended_at: null | number
   id: string
   /** Original root id of a compression chain, when this entry is a projected
@@ -1104,6 +1113,28 @@ export interface ProjectInfo {
 export interface ProjectsPayload {
   projects: ProjectInfo[]
   active_id: null | string
+}
+
+/**
+ * A session group: a flat, user-named bucket for tidying conversations.
+ * Mirrors `hermes_cli/projects_db.SessionGroup.to_dict()`.
+ *
+ * Deliberately NOT a project. A group owns no folder, no repo and no branch, so
+ * filing a chat into one is organization and nothing else — that asymmetry is what
+ * lets the sidebar move a chat between groups without the agent's workspace moving
+ * with it. Flat by design: one group per session, no nesting.
+ */
+export interface GroupInfo {
+  id: string
+  name: string
+  color: null | string
+  icon: null | string
+  sort_order: number
+  created_at: number
+}
+
+export interface GroupsPayload {
+  groups: GroupInfo[]
 }
 
 export interface ProfileSoul {

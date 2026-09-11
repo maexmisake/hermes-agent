@@ -78,7 +78,11 @@ def _stamped_project_tree(db, params, **kwargs):
     """``_build_project_tree`` + profile stamping shared by the two tree RPCs."""
     from tui_gateway.project_tree import stamp_profile
     tree, active_id = _build_project_tree(db, **kwargs)
-    stamp_profile(tree["projects"], _response_profile_name(params.get("profile")))
+    profile = _response_profile_name(params.get("profile"))
+    # Group nodes carry session rows exactly like project nodes, so they need the same stamp —
+    # without it a grouped row has no owner and cross-profile routing drops it.
+    stamp_profile(tree["projects"], profile)
+    stamp_profile(tree.get("groups") or [], profile)
     return tree, active_id
 
 
@@ -93,7 +97,8 @@ def _(rid, params: dict) -> dict:
         tree, active_id = _stamped_project_tree(
             db, params, preview_limit=int(params.get("preview_limit") or 3), hydrate=False,
             session_limit=int(params.get("session_limit") or 2000), include_discovered=True)
-        return _ok(rid, {"projects": tree["projects"], "active_id": active_id,
+        return _ok(rid, {"projects": tree["projects"], "groups": tree.get("groups") or [],
+                         "active_id": active_id,
                          "scoped_session_ids": tree["scoped_session_ids"]})
 
 
@@ -110,7 +115,11 @@ def _(rid, params: dict) -> dict:
         tree, _active = _stamped_project_tree(
             db, params, preview_limit=0, hydrate=True,
             session_limit=int(params.get("session_limit") or 5000), include_discovered=False)
-        return _ok(rid, {"project": next((p for p in tree["projects"] if p["id"] == project_id), None)})
+        # A group id resolves here too: the sidebar expands groups and projects with the same
+        # control, so one lookup serves both rather than forking a parallel RPC.
+        node = next(
+            (n for n in (tree["projects"] + (tree.get("groups") or [])) if n["id"] == project_id), None)
+        return _ok(rid, {"project": node})
 
 
 # ── config.get — one getter per key returning the result payload.

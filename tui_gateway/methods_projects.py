@@ -108,7 +108,13 @@ def _(rid, params, pdb, conn) -> dict:
 
 @_projects_method("projects.delete")
 def _(rid, params, pdb, conn) -> dict:
-    pdb.delete_project(conn, _require_project(pdb, conn, params).id)
+    project = _require_project(pdb, conn, params)
+    pdb.delete_project(conn, project.id)
+    # Same best-effort unfile as groups.delete: rows filed here fall back to cwd placement either
+    # way, this just stops the store from keeping pointers to a project that is gone.
+    with contextlib.suppress(Exception), _profile_db(params) as db:
+        if db is not None:
+            db.clear_session_filing(project_id=project.id)
     return _ok(rid, _projects_payload(conn))
 
 
@@ -116,6 +122,59 @@ def _(rid, params, pdb, conn) -> dict:
 def _(rid, params, pdb, conn) -> dict:
     pdb.set_active(conn, _require_project(pdb, conn, params).id if params.get("id") else None)
     return _ok(rid, {"active_id": pdb.get_active_id(conn)})
+
+
+# ── Session groups ───────────────────────────────────────────────────────────
+# Definitions live in projects.db; membership lives on the session row. A group never
+# resolves to a folder, so none of these handlers can move a workspace.
+
+
+def _groups_payload(pdb, conn) -> dict:
+    return {"groups": [g.to_dict() for g in pdb.list_groups(conn)]}
+
+
+def _require_group(pdb, conn, params: dict):
+    group = pdb.get_group(conn, str(params.get("id") or ""))
+    if group is None:
+        raise _NoProject
+    return group
+
+
+@_projects_method("projects.groups.list")
+def _(rid, params, pdb, conn) -> dict:
+    return _ok(rid, _groups_payload(pdb, conn))
+
+
+@_projects_method("projects.groups.create")
+def _(rid, params, pdb, conn) -> dict:
+    gid = pdb.create_group(
+        conn, name=str(params.get("name") or ""), color=params.get("color"), icon=params.get("icon"))
+    return _ok(rid, {"group": pdb.get_group(conn, gid).to_dict(), **_groups_payload(pdb, conn)})
+
+
+@_projects_method("projects.groups.update")
+def _(rid, params, pdb, conn) -> dict:
+    group = _require_group(pdb, conn, params)
+    pdb.update_group(conn, group.id, **_pick(params, "name", "color", "icon"))
+    return _ok(rid, {"group": pdb.get_group(conn, group.id).to_dict(), **_groups_payload(pdb, conn)})
+
+
+@_projects_method("projects.groups.reorder")
+def _(rid, params, pdb, conn) -> dict:
+    pdb.set_group_order(conn, params.get("ids") or [])
+    return _ok(rid, _groups_payload(pdb, conn))
+
+
+@_projects_method("projects.groups.delete")
+def _(rid, params, pdb, conn) -> dict:
+    group = _require_group(pdb, conn, params)
+    pdb.delete_group(conn, group.id)
+    # Best-effort unfile: the tree ignores a group nothing claims, so the chats are already safe.
+    # This only stops the store from keeping pointers to a group that is gone.
+    with contextlib.suppress(Exception), _profile_db(params) as db:
+        if db is not None:
+            db.clear_session_filing(group_id=group.id)
+    return _ok(rid, _groups_payload(pdb, conn))
 
 
 @_projects_method("projects.for_cwd")
@@ -326,14 +385,18 @@ def _project_tree_row(r: dict) -> dict:
         **{k: r.get(k) or 0 for k in (
             "message_count", "tool_call_count", "input_tokens", "output_tokens")},
         **{k: r.get(k) for k in ("actual_cost_usd", "estimated_cost_usd", "model")},
-        is_active=False, **{k: r.get(k) for k in ("cwd", "git_branch", "git_repo_root")})
+        is_active=False,
+        # project_id / group_id ride along so the renderer can name a row's filing without a
+        # second round trip — and so its optimistic overlay places a freshly filed chat the
+        # same way build_tree just did.
+        **{k: r.get(k) for k in ("cwd", "git_branch", "git_repo_root", "project_id", "group_id")})
     return row
 
 
 def _project_tree_inputs(
     db, session_limit: int, *, include_discovered: bool
-) -> tuple[list[dict], list[dict], list[dict], str | None]:
-    """Gather (sessions, projects, discovered_repos, active_id) for build_tree.
+) -> tuple[list[dict], list[dict], list[dict], list[dict], str | None]:
+    """Gather (sessions, projects, groups, discovered_repos, active_id) for build_tree.
     ``include_discovered`` is the zero-session-repo overview tier; drill-in skips it (and
     the distinct-cwd scan + git probes) on that per-turn path."""
     # compact_rows: selecting the system-prompt blob only to drop it costs tens of MB of reads.
@@ -352,13 +415,14 @@ def _project_tree_inputs(
             pdb.reconcile_discovered_repos_policy(
                 conn, policy_key, preserve_unversioned=_repo_discovery_policy_is_default(policy))
         projects = [p.to_dict() for p in pdb.list_projects(conn)]
+        groups = [g.to_dict() for g in pdb.list_groups(conn)]
         active_id = pdb.get_active_id(conn)
         # backfill stays off the hot tree path — grouping uses the live resolver.
         discovered = []
         if include_discovered:
             discovered = _discover_repos_payload(
                 db, conn=conn, backfill=False, include_cached=policy["enabled"])
-    return sessions, projects, discovered, active_id
+    return sessions, projects, groups, discovered, active_id
 
 
 # Per-build memo for `_dir_exists_cached`; cleared by every `_build_project_tree`.
@@ -379,7 +443,7 @@ def _build_project_tree(
     """Gather inputs and run the one authoritative builder. Returns (tree, active_id)."""
     from tui_gateway import project_tree
     _DIR_EXISTS_CACHE.clear()
-    sessions, projects, discovered, active_id = _project_tree_inputs(
+    sessions, projects, groups, discovered, active_id = _project_tree_inputs(
         db, session_limit, include_discovered=include_discovered)
     # build_tree also resolves declared project folders and discovered roots — warm them too.
     git_probe.warm_roots(
@@ -388,7 +452,7 @@ def _build_project_tree(
     tree = project_tree.build_tree(
         projects, sessions, discovered, git_probe.resolve, preview_limit=preview_limit,
         hydrate=hydrate, is_junk_root=_is_repo_junk, is_junk_cwd=_is_session_cwd_junk,
-        exists=_dir_exists_cached)
+        exists=_dir_exists_cached, groups=groups)
     return tree, active_id
 
 

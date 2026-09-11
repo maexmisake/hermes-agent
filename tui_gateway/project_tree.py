@@ -319,7 +319,18 @@ class _FolderIndex:
 
 
 def _project_for_session(
-        session: dict, index: _FolderIndex, resolve: Optional[Resolve]) -> Optional[dict]:
+        session: dict, index: _FolderIndex, resolve: Optional[Resolve],
+        by_id: Optional[dict] = None) -> Optional[dict]:
+    """The project owning ``session``: an explicit filing first, else the longest folder match.
+
+    An explicit ``project_id`` wins over every path heuristic, and applies even to a session with no
+    cwd at all — that is what makes filing a chat organization rather than a workspace move. A
+    ``project_id`` that resolves to nothing (project deleted, or a row copied between profiles) falls
+    through to folder placement instead of orphaning the row; a dangling id must never hide a chat.
+    """
+    filed = _field(session, "project_id")
+    if filed and (by_id or {}).get(filed) is not None:
+        return by_id[filed]
     cwd = _field(session, "cwd")
     if not cwd:
         return None
@@ -337,7 +348,7 @@ def _project_node(
     rows = sessions or []
     node = {
         "id": pid, "label": label, "path": path, "color": None, "icon": None,
-        "isAuto": False, "isNoProject": False,
+        "isAuto": False, "isNoProject": False, "isGroup": False,
         "sessionCount": session_count, "lastActive": last_active,
         # Totals over the same sessions `sessionCount` counts (billed cost, else estimated).
         "totalTokens": sum(
@@ -377,40 +388,79 @@ def _auto_buckets(
     return by_auto_root, homeless
 
 
+def _flat_bucket(pid: str, label: str, rows: list[dict], hydrate: bool) -> list[dict]:
+    """A folder-less node's repo subtree: one synthetic repo holding one lane that carries the rows.
+    Shared by Home and by session groups — neither owns a directory, so neither has real structure."""
+    lane = {
+        "id": pid, "label": label, "path": None, "isMain": False, "isKanban": False,
+        "sessions": rows if hydrate else []}
+    return [{"id": pid, "label": label, "path": None, "groups": [lane], "sessionCount": len(rows)}]
+
+
+def _group_node(group: dict, rows: list[dict], hydrate: bool, preview_limit: int) -> dict:
+    """One session-group bucket.
+
+    Shaped exactly like the Home bucket so the sidebar renders it with the same row component. A
+    group owns no folder, so ``path`` is None and there is no repo/lane structure to derive — the
+    single lane exists only to carry the rows. Emitted even when empty: an empty group is a real
+    destination you can file a chat into, and hiding it would make it unreachable.
+    """
+    gid = str(group.get("id") or "")
+    label = str(group.get("name") or gid)
+    ordered = sorted(rows, key=_session_time, reverse=True)
+    previews = ordered[:preview_limit] if preview_limit > 0 else []
+    return _project_node(
+        gid, label, None, _flat_bucket(gid, label, ordered, hydrate), len(ordered),
+        _last_active(ordered), previews, ordered,
+        color=group.get("color"), icon=group.get("icon"), isGroup=True)
+
+
 def _home_project(homeless: list[dict], hydrate: bool, previews: list[dict]) -> dict:
     """The synthetic Home bucket: no folder => no repo/lane structure, one lane carries the rows."""
-    lane = {
-        "id": NO_PROJECT_ID, "label": NO_PROJECT_LABEL, "path": None, "isMain": False,
-        "isKanban": False, "sessions": homeless if hydrate else []}
-    home_repo = {
-        "id": NO_PROJECT_ID, "label": NO_PROJECT_LABEL, "path": None, "groups": [lane],
-        "sessionCount": len(homeless)}
     return _project_node(
-        NO_PROJECT_ID, NO_PROJECT_LABEL, None, [home_repo], len(homeless), _last_active(homeless),
-        previews, homeless, isNoProject=True)
+        NO_PROJECT_ID, NO_PROJECT_LABEL, None,
+        _flat_bucket(NO_PROJECT_ID, NO_PROJECT_LABEL, homeless, hydrate), len(homeless),
+        _last_active(homeless), previews, homeless, isNoProject=True)
 
 
 def build_tree(
     projects: list[dict], sessions: list[dict], discovered_repos: list[dict],
     resolve: Optional[Resolve] = None, *, preview_limit: int = 3, hydrate: bool = False,
     is_junk_root: Optional[Callable[[str], bool]] = None,
-    is_junk_cwd: Optional[Callable[[str], bool]] = None, exists: Optional[Exists] = None) -> dict:
-    """Build the authoritative project tree -> ``{"projects", "scoped_session_ids"}``.
+    is_junk_cwd: Optional[Callable[[str], bool]] = None, exists: Optional[Exists] = None,
+    groups: Optional[list[dict]] = None) -> dict:
+    """Build the authoritative tree -> ``{"projects", "groups", "scoped_session_ids"}``.
 
     ``is_junk_root`` flags git roots that must never become an AUTO project; ``is_junk_cwd``
     is the narrower non-git policy (explicit projects are honored regardless); ``exists``
     keeps a DELETED workspace from becoming a phantom AUTO project (omit on remote backends).
     ``hydrate`` False empties lane ``sessions`` but keeps counts + ``previewSessions``.
+
+    ``groups`` are ``session_groups`` definitions. A session filed into a live group is placed
+    THERE and nowhere else — the group outranks project placement, because a grouped row renders
+    under its group labelled with the project it came from, and rendering it twice would make the
+    same conversation appear in two places. A ``group_id`` no live group claims is ignored, so a
+    deleted group returns its chats to project placement rather than stranding them.
     """
     active_projects = [p for p in projects if not p.get("archived")]
     _junk = is_junk_root or (lambda _root: False)
     _junk_cwd = is_junk_cwd or (lambda _cwd: False)
     _exists = exists or (lambda _path: True)
     folder_index = _FolderIndex(active_projects)
+    projects_by_id = {str(p.get("id") or ""): p for p in active_projects if p.get("id")}
+
+    group_defs = list(groups or [])
+    live_group_ids = {str(g.get("id") or "") for g in group_defs if g.get("id")}
+    by_group: dict[str, list[dict]] = {}
+    ungrouped: list[dict] = []
+    for session in sessions:
+        gid = _field(session, "group_id")
+        (by_group.setdefault(gid, []) if gid in live_group_ids else ungrouped).append(session)
+
     by_project: dict[str, list[dict]] = {}  # explicit project id -> owned rows
     unowned: list[dict] = []
-    for session in sessions:
-        owner = _project_for_session(session, folder_index, resolve)
+    for session in ungrouped:
+        owner = _project_for_session(session, folder_index, resolve, projects_by_id)
         (by_project.setdefault(owner["id"], []) if owner else unowned).append(session)
 
     scoped_ids: list[str] = []
@@ -478,4 +528,11 @@ def build_tree(
         _scope(homeless)
         result.insert(0, _home_project(homeless, hydrate, _previews(homeless)))
 
-    return {"projects": result, "scoped_session_ids": scoped_ids}
+    # Groups are their own top-level list, in the user's stored order, empties included.
+    group_nodes = [_group_node(g, by_group.get(str(g.get("id") or ""), []), hydrate, preview_limit)
+                   for g in group_defs]
+    for node in group_nodes:
+        _scope(node.get("previewSessions") or [])
+        _scope([s for repo in node["repos"] for lane in repo["groups"] for s in lane["sessions"]])
+
+    return {"projects": result, "groups": group_nodes, "scoped_session_ids": list(dict.fromkeys(scoped_ids))}

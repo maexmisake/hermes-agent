@@ -64,6 +64,21 @@ CREATE TABLE IF NOT EXISTS discovered_repos (
     label         TEXT,
     last_seen     INTEGER NOT NULL
 );
+
+-- Session groups: a flat set of user-named buckets for tidying conversations.
+-- Deliberately NOT projects: a group owns no folder, carries no git identity and
+-- never implies a workspace, so filing a chat into one is organization and nothing
+-- else. Membership lives on the session row (`sessions.group_id`) rather than here,
+-- because sessions are per-profile state.db rows and this DB holds definitions only.
+-- Flat by design (one group per session, no nesting).
+CREATE TABLE IF NOT EXISTS session_groups (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    color       TEXT,
+    icon        TEXT,
+    sort_order  INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL
+);
 """
 
 # Lowercase alphanumerics, hyphens, underscores; 1-64 chars; no leading separator. Strict enough to
@@ -482,6 +497,111 @@ def project_for_path(conn: sqlite3.Connection, path: str, *, include_archived: b
 
     owners = [row for row in conn.execute(sql).fetchall() if owns(row["folder"])]
     return get_project(conn, max(owners, key=lambda r: len(r["folder"]))["pid"]) if owners else None
+
+
+# ── Session groups ───────────────────────────────────────────────────────────
+# Definitions only. A group NEVER resolves to a folder, a repo or a branch — that
+# asymmetry with Project is the whole point, and it is what lets the sidebar move a
+# chat between groups without the agent's workspace moving with it.
+
+
+@dataclass
+class SessionGroup:
+    id: str
+    name: str
+    created_at: int
+    color: Optional[str] = None
+    icon: Optional[str] = None
+    sort_order: int = 0
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id, "name": self.name, "color": self.color, "icon": self.icon,
+            "sort_order": self.sort_order, "created_at": self.created_at,
+        }
+
+
+def _load_group(row: sqlite3.Row) -> SessionGroup:
+    keys = row.keys()
+    return SessionGroup(
+        id=row["id"], name=row["name"], created_at=row["created_at"],
+        color=row["color"] if "color" in keys else None,
+        icon=row["icon"] if "icon" in keys else None,
+        sort_order=int(row["sort_order"] or 0) if "sort_order" in keys else 0,
+    )
+
+
+def create_group(
+    conn: sqlite3.Connection, *, name: str, color: Optional[str] = None, icon: Optional[str] = None,
+) -> str:
+    """Create a session group and return its id. New groups sort to the end."""
+    name = str(name or "").strip()
+    if not name:
+        raise ValueError("group name must not be empty")
+    gid = "g_" + secrets.token_hex(4)
+    with write_txn(conn):
+        nxt = conn.execute("SELECT COALESCE(MAX(sort_order), -1) + 1 FROM session_groups").fetchone()[0]
+        conn.execute(
+            "INSERT INTO session_groups (id, name, color, icon, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (gid, name, color or None, icon or None, int(nxt), _now()),
+        )
+    return gid
+
+
+def list_groups(conn: sqlite3.Connection) -> List[SessionGroup]:
+    """Every group, in the user's hand-picked order (creation order until reordered)."""
+    return [
+        _load_group(r) for r in
+        conn.execute("SELECT * FROM session_groups ORDER BY sort_order ASC, created_at ASC").fetchall()
+    ]
+
+
+def get_group(conn: sqlite3.Connection, group_id: str) -> Optional[SessionGroup]:
+    row = conn.execute("SELECT * FROM session_groups WHERE id = ?", (str(group_id or ""),)).fetchone()
+    return None if row is None else _load_group(row)
+
+
+def update_group(
+    conn: sqlite3.Connection, group_id: str, *, name: Optional[str] = None, color: Optional[str] = None,
+    icon: Optional[str] = None,
+) -> bool:
+    """Patch a group. ``None`` leaves a field untouched; ``""`` clears colour/icon (same convention as
+    :func:`update_project`)."""
+    if name is not None:
+        name = str(name).strip()
+        if not name:
+            raise ValueError("group name must not be empty")
+    fields = [
+        (col, stored) for col, given, stored in (
+            ("name", name, name), ("color", color, color or None), ("icon", icon, icon or None),
+        ) if given is not None
+    ]
+    if not fields:
+        return False
+    sql = f"UPDATE session_groups SET {', '.join(f'{c} = ?' for c, _ in fields)} WHERE id = ?"
+    return _execute_rowcount(conn, sql, [v for _, v in fields] + [group_id]) > 0
+
+
+def delete_group(conn: sqlite3.Connection, group_id: str) -> bool:
+    """Delete a group definition.
+
+    Sessions filed under it keep their now-dangling ``group_id``, and the tree builder treats an
+    unresolvable group as no group at all — so the chats fall back to cwd-derived placement instead
+    of vanishing. Fail-open on purpose: a deleted group must never be able to hide a conversation.
+    """
+    return _execute_rowcount(conn, "DELETE FROM session_groups WHERE id = ?", (group_id,)) > 0
+
+
+def set_group_order(conn: sqlite3.Connection, group_ids: Iterable[str]) -> None:
+    """Persist a hand-picked group order. Ids not listed keep their existing rank behind the listed ones."""
+    ids = [str(g).strip() for g in group_ids if str(g or "").strip()]
+    if not ids:
+        return
+    with write_txn(conn):
+        conn.execute("UPDATE session_groups SET sort_order = sort_order + ?", (len(ids),))
+        conn.executemany(
+            "UPDATE session_groups SET sort_order = ? WHERE id = ?", [(i, gid) for i, gid in enumerate(ids)],
+        )
 
 
 def branch_name_for(project: Project, task_id: str, *, title: str = "") -> str:

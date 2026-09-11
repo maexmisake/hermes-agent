@@ -657,3 +657,138 @@ def test_equivalent_windows_spellings_derive_one_lane_key():
     b = pt._place_by_heuristic("C:\\work\\notes\\")
     assert a is not None and b is not None
     assert pt._lane_key(a["lane_key"]) == pt._lane_key(b["lane_key"])
+
+
+# ── Explicit filing: project_id / group_id ─────────────────────────────────
+# Filing is ORGANIZATION ONLY. These assert the precedence contract the sidebar
+# relies on — an explicit choice outranks every path heuristic, a group outranks
+# a project, and a dangling id never hides a conversation.
+
+
+def _group(gid, name, **over):
+    row = {"id": gid, "name": name, "color": None, "icon": None, "sort_order": 0, "created_at": 0}
+    row.update(over)
+    return row
+
+
+def test_explicit_project_id_outranks_the_folder_match():
+    """A chat filed into B stays in B even though its cwd sits inside A's folder."""
+    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
+    a = _project("p_a", "Alpha", ["/a"])
+    b = _project("p_b", "Beta", ["/b"])
+    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo", project_id="p_b")]
+
+    tree = pt.build_tree([a, b], sessions, [], resolve, hydrate=True)
+
+    owner = next(p for p in tree["projects"] if _sessions_of(p))
+    assert owner["id"] == "p_b"
+    assert not _sessions_of(next(p for p in tree["projects"] if p["id"] == "p_a"))
+
+
+def test_explicit_project_id_places_a_session_with_no_cwd():
+    """The point of filing: a chat with no workspace at all can still belong to a project.
+    Without this it would fall to Home, and filing a folder-less chat would be impossible."""
+    proj = _project("p_a", "Alpha", ["/a"])
+    sessions = [_session("", project_id="p_a")]
+
+    tree = pt.build_tree([proj], sessions, [], None, hydrate=True)
+
+    owner = next(p for p in tree["projects"] if p["id"] == "p_a")
+    assert [s["id"] for s in owner["previewSessions"]] == [sessions[0]["id"]]
+    assert _home(tree) is None
+
+
+def test_dangling_project_id_falls_back_to_folder_placement():
+    """A deleted (or cross-profile) project id must not orphan the chat."""
+    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
+    proj = _project("p_a", "Alpha", ["/a"])
+    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo", project_id="p_gone")]
+
+    tree = pt.build_tree([proj], sessions, [], resolve, hydrate=True)
+
+    owner = next(p for p in tree["projects"] if _sessions_of(p))
+    assert owner["id"] == "p_a"
+
+
+def test_archived_project_does_not_claim_its_filed_sessions():
+    """``build_tree`` drops archived projects, so a row filed into one falls back to its folder."""
+    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
+    archived = _project("p_a", "Alpha", ["/a"], archived=True)
+    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo", project_id="p_a")]
+
+    tree = pt.build_tree([archived], sessions, [], resolve, hydrate=True)
+
+    assert "p_a" not in [p["id"] for p in tree["projects"]]
+    assert _real_project_ids(tree) == ["/a/repo"]
+
+
+def test_group_membership_outranks_project_placement():
+    """A grouped chat renders under its group and NOWHERE else — one home per row."""
+    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
+    proj = _project("p_a", "Alpha", ["/a"])
+    grouped = _session("/a/repo", branch="main", repo_root="/a/repo", group_id="g_1")
+    loose = _session("/a/repo", branch="main", repo_root="/a/repo")
+
+    tree = pt.build_tree(
+        [proj], [grouped, loose], [], resolve, hydrate=True, groups=[_group("g_1", "Shipping")])
+
+    group = tree["groups"][0]
+    assert group["id"] == "g_1" and group["label"] == "Shipping" and group["isGroup"] is True
+    assert [s["id"] for s in _sessions_of(group)] == [grouped["id"]]
+    owner = next(p for p in tree["projects"] if p["id"] == "p_a")
+    assert [s["id"] for s in _sessions_of(owner)] == [loose["id"]]
+
+
+def test_group_claims_a_session_filed_to_a_project_too():
+    """Both ids set: the group wins, so the chat is not rendered twice."""
+    proj = _project("p_a", "Alpha", ["/a"])
+    session = _session("", project_id="p_a", group_id="g_1")
+
+    tree = pt.build_tree([proj], [session], [], None, hydrate=True, groups=[_group("g_1", "Shipping")])
+
+    assert [s["id"] for s in _sessions_of(tree["groups"][0])] == [session["id"]]
+    assert not _sessions_of(next(p for p in tree["projects"] if p["id"] == "p_a"))
+
+
+def test_dangling_group_id_falls_back_to_project_placement():
+    """Deleting a group returns its chats to the tree instead of stranding them."""
+    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
+    proj = _project("p_a", "Alpha", ["/a"])
+    sessions = [_session("/a/repo", branch="main", repo_root="/a/repo", group_id="g_gone")]
+
+    tree = pt.build_tree([proj], sessions, [], resolve, hydrate=True, groups=[])
+
+    assert tree["groups"] == []
+    assert [s["id"] for s in _sessions_of(next(p for p in tree["projects"] if p["id"] == "p_a"))] == [
+        sessions[0]["id"]]
+
+
+def test_empty_groups_are_still_emitted_in_stored_order():
+    """An empty group is a real drop target; hiding it would make it unreachable."""
+    tree = pt.build_tree(
+        [], [], [], None, hydrate=True, groups=[_group("g_2", "Second"), _group("g_1", "First")])
+
+    assert [g["id"] for g in tree["groups"]] == ["g_2", "g_1"]
+    assert all(g["sessionCount"] == 0 for g in tree["groups"])
+    assert all(g["path"] is None for g in tree["groups"])
+
+
+def test_grouped_sessions_are_scoped_so_flat_recents_excludes_them():
+    """``scoped_session_ids`` is what keeps a row out of the flat list once a folder owns it."""
+    session = _session("", group_id="g_1")
+
+    tree = pt.build_tree([], [session], [], None, hydrate=True, groups=[_group("g_1", "Shipping")])
+
+    assert tree["scoped_session_ids"] == [session["id"]]
+
+
+def test_group_node_carries_no_repo_structure():
+    """A group owns no directory, so it must never grow lanes that imply one."""
+    session = _session("/a/repo", branch="main", repo_root="/a/repo", group_id="g_1")
+    resolve = _resolver({"/a/repo": ("/a/repo", "/a/repo")})
+
+    tree = pt.build_tree([], [session], [], resolve, hydrate=True, groups=[_group("g_1", "Shipping")])
+
+    repos = tree["groups"][0]["repos"]
+    assert len(repos) == 1 and repos[0]["path"] is None
+    assert [lane["id"] for lane in repos[0]["groups"]] == ["g_1"]
