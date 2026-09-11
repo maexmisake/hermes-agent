@@ -59,6 +59,10 @@ export interface SidebarProjectTree {
   // claimed. It has no folder, so no repo/worktree structure — its one lane
   // exists only to carry the rows.
   isNoProject?: boolean
+  // A user-made session GROUP rather than a project: a flat bucket with no folder,
+  // no repo and no branch. Shaped like a project node only so one row component
+  // renders both; nothing may derive a workspace from it.
+  isGroup?: boolean
   repos: SidebarWorkspaceTree[]
   sessionCount: number
   // Tokens and spend over the same sessions `sessionCount` counts, summed by

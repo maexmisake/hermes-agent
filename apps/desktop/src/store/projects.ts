@@ -1295,6 +1295,53 @@ export async function fileSession(
   void refreshProjectTree()
 }
 
+/**
+ * File a session under a sidebar tree node, adopting an auto-discovered repo first.
+ *
+ * An auto node's id is a repo PATH, which no projects.db row claims — storing it as a
+ * filing would leave an id that resolves to nothing, and the row would silently fall back
+ * to cwd placement. Adopting the repo as a real project first is the same move
+ * {@link setProjectAppearance} makes when you colour one. Home (`isNoProject`) has no row
+ * to point at either, so choosing it CLEARS the filing, which is exactly what it means.
+ */
+export async function fileSessionUnderNode(
+  sessionId: string,
+  node: Pick<SidebarProjectTree, 'id' | 'isAuto' | 'isGroup' | 'isNoProject' | 'label' | 'path'>,
+  profile?: null | string
+): Promise<void> {
+  if (node.isGroup) {
+    await fileSession(sessionId, { groupId: node.id }, profile)
+
+    return
+  }
+
+  if (node.isNoProject) {
+    await fileSession(sessionId, { groupId: null, projectId: null }, profile)
+
+    return
+  }
+
+  let projectId = node.id
+
+  if (node.isAuto) {
+    if (!node.path) {
+      throw new Error(translateNow('sidebar.projects.moveNoFolder'))
+    }
+
+    const adopted = await createProject({ folders: [node.path], name: node.label, primaryPath: node.path })
+
+    if (!adopted) {
+      throw new Error(translateNow('sidebar.projects.moveFailed'))
+    }
+
+    projectId = adopted.id
+  }
+
+  // Filing into a project takes the chat OUT of any group: a group outranks a project for
+  // placement, so leaving the group set would file it somewhere the user can't see it land.
+  await fileSession(sessionId, { groupId: null, projectId }, profile)
+}
+
 // ── Project management dialog ────────────────────────────────────────────────
 // A single dialog mounted in the sidebar reads this atom, so a project node's
 // menu can open create / rename / add-folder flows without prop threading

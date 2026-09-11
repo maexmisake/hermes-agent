@@ -14,8 +14,11 @@ import {
   $projectTree,
   $worktreeRefreshToken,
   ALL_PROJECTS,
+  $groupTree,
   createProject,
   enterProject,
+  fileSession,
+  fileSessionUnderNode,
   exitProjectScope,
   fetchProjectSessions,
   openProjectCreate,
@@ -972,5 +975,145 @@ describe('tombstone pruning', () => {
     await refreshProjectTree()
 
     expect($removedSessionIds.get().has('sess-1')).toBe(false)
+  })
+})
+
+
+describe('filing a session (organization only)', () => {
+  // The contract: filing NEVER moves a workspace. `session.workspace.move` still does
+  // that, deliberately; these guard that the two stayed apart.
+  beforeEach(() => {
+    vi.clearAllMocks()
+    $activeGatewayProfile.set('default')
+    setShowAllProfiles(false)
+    $projectTree.set([])
+    $groupTree.set([])
+    $sessions.set([])
+  })
+
+  const row = (over: Record<string, unknown> = {}) =>
+    ({
+      archived: false,
+      cwd: '/www/app',
+      ended_at: null,
+      group_id: null,
+      id: 's1',
+      input_tokens: 0,
+      is_active: false,
+      last_active: 1,
+      message_count: 1,
+      model: null,
+      output_tokens: 0,
+      preview: null,
+      project_id: null,
+      source: 'desktop',
+      started_at: 1,
+      title: 'chat',
+      tool_call_count: 0,
+      ...over
+    }) as never
+
+  it('sends only the fields it was given, and never a cwd', async () => {
+    const request = vi.fn(async () => ({}))
+    const gateway = { connectionState: 'open', request }
+    activeGateway.mockReturnValue(gateway as never)
+    gatewayAtom.set(gateway as never)
+
+    await fileSession('s1', { projectId: 'p_a' })
+
+    expect(request).toHaveBeenCalledWith('session.filing.set', {
+      project_id: 'p_a',
+      session_key: 's1'
+    })
+    // The whole point: no workspace field can ride along.
+    expect(JSON.stringify(request.mock.calls)).not.toContain('cwd')
+  })
+
+  it('maps null to the empty string the backend reads as "clear"', async () => {
+    const request = vi.fn(async () => ({}))
+    const gateway = { connectionState: 'open', request }
+    activeGateway.mockReturnValue(gateway as never)
+    gatewayAtom.set(gateway as never)
+
+    await fileSession('s1', { groupId: null, projectId: null })
+
+    expect(request).toHaveBeenCalledWith('session.filing.set', {
+      group_id: '',
+      project_id: '',
+      session_key: 's1'
+    })
+  })
+
+  it('paints the row immediately and leaves the cwd alone', async () => {
+    const request = vi.fn(async () => ({}))
+    const gateway = { connectionState: 'open', request }
+    activeGateway.mockReturnValue(gateway as never)
+    gatewayAtom.set(gateway as never)
+    $sessions.set([row()])
+
+    await fileSession('s1', { projectId: 'p_a' })
+
+    const [updated] = $sessions.get()
+    expect(updated.project_id).toBe('p_a')
+    expect(updated.cwd).toBe('/www/app')
+  })
+
+  it('rolls the row back when the write fails', async () => {
+    const request = vi.fn().mockRejectedValue(new Error('nope'))
+    const gateway = { connectionState: 'open', request }
+    activeGateway.mockReturnValue(gateway as never)
+    gatewayAtom.set(gateway as never)
+    $sessions.set([row({ project_id: 'p_before' })])
+
+    await expect(fileSession('s1', { projectId: 'p_after' })).rejects.toThrow('nope')
+
+    expect($sessions.get()[0].project_id).toBe('p_before')
+  })
+
+  it('files into a group and clears any project, so a row never lands in two places', async () => {
+    const request = vi.fn(async () => ({}))
+    const gateway = { connectionState: 'open', request }
+    activeGateway.mockReturnValue(gateway as never)
+    gatewayAtom.set(gateway as never)
+
+    const group = { id: 'g_1', isGroup: true, label: 'Shipping', path: null, repos: [], sessionCount: 0 }
+
+    await fileSessionUnderNode('s1', group as unknown as SidebarProjectTree)
+
+    expect(request).toHaveBeenCalledWith('session.filing.set', { group_id: 'g_1', session_key: 's1' })
+  })
+
+  it('treats Home as "unfile", clearing both fields', async () => {
+    const request = vi.fn(async () => ({}))
+    const gateway = { connectionState: 'open', request }
+    activeGateway.mockReturnValue(gateway as never)
+    gatewayAtom.set(gateway as never)
+
+    const home = { id: NO_PROJECT_ID, isNoProject: true, label: 'Home', path: null, repos: [], sessionCount: 0 }
+
+    await fileSessionUnderNode('s1', home as unknown as SidebarProjectTree)
+
+    expect(request).toHaveBeenCalledWith('session.filing.set', {
+      group_id: '',
+      project_id: '',
+      session_key: 's1'
+    })
+  })
+
+  it('filing into a project also leaves any group, for the same reason', async () => {
+    const request = vi.fn(async () => ({}))
+    const gateway = { connectionState: 'open', request }
+    activeGateway.mockReturnValue(gateway as never)
+    gatewayAtom.set(gateway as never)
+
+    const project = { id: 'p_a', label: 'Alpha', path: '/www/app', repos: [], sessionCount: 0 }
+
+    await fileSessionUnderNode('s1', project as unknown as SidebarProjectTree)
+
+    expect(request).toHaveBeenCalledWith('session.filing.set', {
+      group_id: '',
+      project_id: 'p_a',
+      session_key: 's1'
+    })
   })
 })
