@@ -2258,6 +2258,24 @@ export const zhHant = defineLocale({
   },
 
   composer: {
+    setup: {
+      projectTitle: '專案',
+      noProject: '無專案',
+      newProject: '新增專案…',
+      projectFailed: '無法設定專案',
+      folderTitle: '資料夾',
+      noFolder: '無資料夾',
+      chooseFolder: '選擇資料夾…',
+      folderFailed: '無法設定資料夾',
+      branchTitle: '分支',
+      noBranch: '無分支',
+      branchSearch: '尋找或命名分支',
+      branchLoading: '正在讀取分支…',
+      branchEmpty: '沒有分支',
+      branchOpen: '已開啟',
+      newBranch: name => `新增分支「${name}」`,
+      branchFailed: '無法切換分支'
+    },
     message: '訊息',
     wakingProfile: profile => `正在喚醒 ${profile}…`,
     placeholderStarting: '正在啟動 Hermes...',

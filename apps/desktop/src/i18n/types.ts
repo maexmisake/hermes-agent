@@ -2480,6 +2480,25 @@ export interface Translations {
       done: string
       doneTip: string
     }
+    /** The new-chat setup bubbles above the composer (project / folder / branch). */
+    setup: {
+      projectTitle: string
+      noProject: string
+      newProject: string
+      projectFailed: string
+      folderTitle: string
+      noFolder: string
+      chooseFolder: string
+      folderFailed: string
+      branchTitle: string
+      noBranch: string
+      branchSearch: string
+      branchLoading: string
+      branchEmpty: string
+      branchOpen: string
+      newBranch: (name: string) => string
+      branchFailed: string
+    }
   }
 
   statusStack: {

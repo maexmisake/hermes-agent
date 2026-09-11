@@ -62,10 +62,11 @@ import { ChatBar, ChatBarFallback } from './composer'
 import { requestComposerInsert } from './composer/focus'
 import { droppedFileInlineRefs } from './composer/inline-refs'
 import { ComposerSurfaceProvider, useComposerScope, useComposerSurfaceId } from './composer/scope'
+import { SessionSetupRow } from './composer/session-setup-row'
 import type { ChatBarState } from './composer/types'
 import { type DroppedFile, partitionDroppedFiles } from './hooks/use-composer-actions'
 import { type DragKind, useFileDropZone } from './hooks/use-file-drop-zone'
-import { shouldShowIntro } from './intro-visibility'
+import { shouldShowIntro, shouldShowSessionSetup } from './intro-visibility'
 import { ProfileTag } from './profile-tag'
 import { isRouteSessionMismatch } from './route-session-state'
 import { useRuntimeMessageRepository } from './runtime-repository'
@@ -512,16 +513,22 @@ const ChatViewContent = memo(function ChatViewContent({
   // The compact new-session pop-out skips the wordmark/tagline intro — it's a
   // scratch window, not the full-height empty state. The Appearance toggle
   // turns it off everywhere else.
-  const showIntro = shouldShowIntro({
+  const introInputs = {
     activeSessionId,
     auxiliaryWindow: isAuxiliaryWindow(),
-    enabled: introSplash,
     freshDraftReady,
     messagesEmpty,
     primary: isPrimary,
     routedSessionView: isRoutedSessionView,
     selectedSessionId
-  })
+  }
+
+  const showIntro = shouldShowIntro({ ...introInputs, enabled: introSplash })
+
+  // The setup bubbles ride the same "this chat has not started" condition, but not the
+  // Appearance toggle: turning the wordmark off is about decoration, and these are the
+  // only way to say what a chat should work on before it starts.
+  const showSessionSetup = shouldShowSessionSetup(introInputs)
 
   // Session is still loading if the route references a session we haven't
   // resumed yet. Brand-new routed drafts are empty on purpose once a runtime
@@ -767,6 +774,7 @@ const ChatViewContent = memo(function ChatViewContent({
               onTranscribeAudio={onTranscribeAudio}
               queueSessionKey={queueSessionKey}
               sessionId={activeSessionId}
+              setupRow={showSessionSetup ? <SessionSetupRow /> : undefined}
               state={chatBarState}
             />
           </Suspense>

@@ -2018,6 +2018,24 @@ export const ar = defineLocale({
     }
   },
   composer: {
+    setup: {
+      projectTitle: 'المشروع',
+      noProject: 'بدون مشروع',
+      newProject: 'مشروع جديد…',
+      projectFailed: 'تعذر تعيين المشروع',
+      folderTitle: 'المجلد',
+      noFolder: 'بدون مجلد',
+      chooseFolder: 'اختيار مجلد…',
+      folderFailed: 'تعذر تعيين المجلد',
+      branchTitle: 'الفرع',
+      noBranch: 'بدون فرع',
+      branchSearch: 'ابحث عن فرع أو سمِّ فرعًا',
+      branchLoading: 'جار قراءة الفروع…',
+      branchEmpty: 'لا توجد فروع',
+      branchOpen: 'مفتوح',
+      newBranch: name => `فرع جديد «${name}»`,
+      branchFailed: 'تعذر تبديل الفرع'
+    },
     message: 'الرسالة',
     wakingProfile: profile => `جار إيقاظ ${profile}`,
     placeholderStarting: 'جار بدء Hermes...',

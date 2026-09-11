@@ -41,6 +41,9 @@ export interface ChatBarProps {
   queueSessionKey?: string | null
   sessionId?: string | null
   cwd?: string | null
+  /** The new-chat setup bubbles, rendered in the floating strip above the surface.
+   *  The caller decides when a chat is still a fresh draft; absent means it isn't. */
+  setupRow?: ReactNode
   onCancel: () => Promise<void> | void
   onAddContextRef?: (refText: string, label?: string, detail?: string) => void
   onAddUrl?: (url: string) => void

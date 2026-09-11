@@ -2622,6 +2622,24 @@ export const ru = defineLocale({
     markAllRead: 'Отметить все как прочитанные'
   },
   composer: {
+    setup: {
+      projectTitle: 'Проект',
+      noProject: 'Без проекта',
+      newProject: 'Новый проект…',
+      projectFailed: 'Не удалось задать проект',
+      folderTitle: 'Папка',
+      noFolder: 'Без папки',
+      chooseFolder: 'Выбрать папку…',
+      folderFailed: 'Не удалось задать папку',
+      branchTitle: 'Ветка',
+      noBranch: 'Без ветки',
+      branchSearch: 'Найдите ветку или задайте имя',
+      branchLoading: 'Читаем ветки…',
+      branchEmpty: 'Веток нет',
+      branchOpen: 'открыта',
+      newBranch: name => `Новая ветка «${name}»`,
+      branchFailed: 'Не удалось переключить ветку'
+    },
     message: 'Сообщение',
     wakingProfile: profile => `Пробуждаем ${profile}…`,
     placeholderStarting: 'Запуск Hermes...',

@@ -35,6 +35,7 @@ import {
 } from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $pinnedSessionIds } from '@/store/layout'
+import { $newChatProjectId } from '@/store/new-session-setup'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import {
   $activeGatewayProfile,
@@ -288,7 +289,13 @@ function reconcileAuthoritativeMessages(
 // value is a mirror of Settings → Model and must not pin the new chat.
 async function desktopSessionCreateParams(
   cwd: string,
-  capturedRoute = resolveNewChatOwnerRoute()
+  capturedRoute = resolveNewChatOwnerRoute(),
+  // Filing, from the composer's setup row. Organization ONLY: it records which
+  // project the chat belongs to and never touches `cwd`, so a chat can be filed
+  // in one project while running in another folder — the split the sidebar's
+  // "move to project" relies on. Omitted entirely when nothing was picked, which
+  // leaves the backend to place the chat by its folder as it always has.
+  projectId = ''
 ): Promise<Record<string, unknown>> {
   // Treat Send as the linearization point for the visible selector state. The
   // profile handshake below can yield long enough for background config/model
@@ -319,6 +326,7 @@ async function desktopSessionCreateParams(
     cols: 96,
     source: 'desktop',
     ...(cwd && { cwd }),
+    ...(projectId && { project_id: projectId }),
     ...(profile ? { profile: capturedRoute?.targetProfile || profile } : {}),
     ...(selection.model
       ? { model: selection.model, ...(selection.provider ? { provider: selection.provider } : {}) }
@@ -559,7 +567,10 @@ export function useSessionActions({
         // reduce the owner to a bare profile name that later RPCs dial on a
         // different socket than the one that minted the runtime.
         const capturedRoute = resolveNewChatOwnerRoute()
-        const params = await desktopSessionCreateParams(cwd, capturedRoute)
+        // The setup row's project rides along with the create, so the chat is filed
+        // the moment it exists rather than by a second write that could lose the
+        // race with the first render of the sidebar.
+        const params = await desktopSessionCreateParams(cwd, capturedRoute, $newChatProjectId.get())
 
         // Lease the owner socket for the whole create → owner-publication
         // sequence (#93602 primitive). The per-request lease inside

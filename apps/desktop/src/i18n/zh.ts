@@ -3040,6 +3040,24 @@ export const zh: Translations = {
       done: '已标记为定时任务',
       doneTip: '发送后由智能体创建任务'
     },
+    setup: {
+      projectTitle: '项目',
+      noProject: '无项目',
+      newProject: '新建项目…',
+      projectFailed: '无法设置项目',
+      folderTitle: '文件夹',
+      noFolder: '无文件夹',
+      chooseFolder: '选择文件夹…',
+      folderFailed: '无法设置文件夹',
+      branchTitle: '分支',
+      noBranch: '无分支',
+      branchSearch: '查找或命名分支',
+      branchLoading: '正在读取分支…',
+      branchEmpty: '没有分支',
+      branchOpen: '已打开',
+      newBranch: name => `新建分支“${name}”`,
+      branchFailed: '无法切换分支'
+    },
     snippets: {
       codeReview: {
         label: '代码审查',

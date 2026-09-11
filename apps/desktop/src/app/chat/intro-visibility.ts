@@ -30,3 +30,24 @@ export function shouldShowIntro(input: {
     input.messagesEmpty
   )
 }
+
+/**
+ * Whether the new-chat setup bubbles render above the composer.
+ *
+ * The same "this chat has not started yet" condition as the splash, minus the
+ * Appearance toggle: turning the wordmark off is a taste about decoration, and the
+ * bubbles are the only way to say what a chat should work on before it starts. Once
+ * a message is sent the chat is an ordinary conversation and the row is gone for
+ * good — its context moves to the quiet chip beside the title.
+ */
+export function shouldShowSessionSetup(input: {
+  activeSessionId: null | string
+  auxiliaryWindow: boolean
+  freshDraftReady: boolean
+  messagesEmpty: boolean
+  primary: boolean
+  routedSessionView: boolean
+  selectedSessionId: null | string
+}): boolean {
+  return shouldShowIntro({ ...input, enabled: true })
+}

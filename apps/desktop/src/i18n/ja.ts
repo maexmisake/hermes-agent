@@ -2344,6 +2344,24 @@ export const ja = defineLocale({
   },
 
   composer: {
+    setup: {
+      projectTitle: 'プロジェクト',
+      noProject: 'プロジェクトなし',
+      newProject: '新しいプロジェクト…',
+      projectFailed: 'プロジェクトを設定できませんでした',
+      folderTitle: 'フォルダー',
+      noFolder: 'フォルダーなし',
+      chooseFolder: 'フォルダーを選択…',
+      folderFailed: 'フォルダーを設定できませんでした',
+      branchTitle: 'ブランチ',
+      noBranch: 'ブランチなし',
+      branchSearch: 'ブランチを検索または命名',
+      branchLoading: 'ブランチを読み込み中…',
+      branchEmpty: 'ブランチがありません',
+      branchOpen: '作業中',
+      newBranch: name => `新しいブランチ「${name}」`,
+      branchFailed: 'ブランチを切り替えられませんでした'
+    },
     message: 'メッセージ',
     wakingProfile: profile => `${profile} を起動中…`,
     placeholderStarting: 'Hermes を起動中...',

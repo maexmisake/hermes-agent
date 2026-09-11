@@ -2887,6 +2887,24 @@ export const en: Translations = {
       done: 'Marked for scheduling',
       doneTip: 'Send it and the agent creates the job'
     },
+    setup: {
+      projectTitle: 'Project',
+      noProject: 'No project',
+      newProject: 'New project…',
+      projectFailed: 'Could not set the project',
+      folderTitle: 'Folder',
+      noFolder: 'No folder',
+      chooseFolder: 'Choose folder…',
+      folderFailed: 'Could not set the folder',
+      branchTitle: 'Branch',
+      noBranch: 'No branch',
+      branchSearch: 'Find or name a branch',
+      branchLoading: 'Reading branches…',
+      branchEmpty: 'No branches',
+      branchOpen: 'open',
+      newBranch: name => `New branch “${name}”`,
+      branchFailed: 'Could not switch branch'
+    },
     snippets: {
       codeReview: {
         label: 'Code review',
