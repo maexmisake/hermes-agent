@@ -4,11 +4,10 @@ import type { HermesGitWorktree, HermesRepoStatus } from '@/global'
 import { desktopGit } from '@/lib/desktop-git'
 
 import {
-  $projectScope,
+  $activeProjectId,
   $projectTree,
   $worktreeDialog,
   $worktreeRefreshToken,
-  ALL_PROJECTS,
   projectRootCwd
 } from './projects'
 import {
@@ -499,11 +498,16 @@ export function _resetCodingStatusForTests(): void {
 // exists inside a repo.
 export async function resolveWorktreeRepoPath(): Promise<string> {
   const runtimeId = $focusedRuntimeId.get()
-  const scope = $projectScope.get()
+
+  // The focused session's own worktree, then the ACTIVE project's root. The second
+  // rung used to be "whatever project the sidebar was scoped to", which no longer
+  // exists — the active project is the durable pointer and is what the user last
+  // deliberately chose, rather than what they last happened to look at.
+  const activeId = $activeProjectId.get()
 
   const candidates = [
     runtimeId ? ($sessionStates.get()[runtimeId]?.cwd ?? '') : '',
-    scope === ALL_PROJECTS ? '' : projectRootCwd($projectTree.get().find(node => node.id === scope))
+    activeId ? projectRootCwd($projectTree.get().find(node => node.id === activeId)) : ''
   ]
 
   for (const candidate of candidates) {

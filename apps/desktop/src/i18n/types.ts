@@ -2198,7 +2198,25 @@ export interface Translations {
     projectLoadFailed: string
     noSessions: string
     noFilterMatches: string
+    allInFolders: string
+    groups: {
+      sectionLabel: string
+      newButton: string
+      createTitle: string
+      createDesc: string
+      renameTitle: string
+      namePlaceholder: string
+      empty: string
+      menu: string
+      rename: string
+      delete: string
+      deleteConfirm: (name: string) => string
+      deleteFailed: string
+      reorderFailed: string
+      filedIn: (name: string) => string
+    }
     projects: {
+      empty: string
       showAllSessions: string
       sectionLabel: string
       home: string

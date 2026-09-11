@@ -126,17 +126,23 @@ export function ProjectOverviewRow({
     <SidebarRowLead>{projectIcon(project)}</SidebarRowLead>
   )
 
+  // Clicking a folder OPENS it in place. It used to drill in, scoping the sidebar to
+  // that project and hiding every other session — the thing a single list exists to
+  // avoid. `onEnter` is kept for the few callers that still navigate (⌘K "go to
+  // project"); absent, the label is just a second hit target for the caret.
+  const labelAction = onEnter ? () => onEnter(project.id) : toggleOpen
+
   const labelLink = (
     <SidebarRowLink
       // The glyph is aria-hidden and the tooltip only speaks on hover, so the
       // link's own name carries the auto cue — screen readers get it too.
-      aria-label={
-        project.isAuto
-          ? `${s.projects.enter(project.label)} (${s.projects.autoDiscovered})`
-          : s.projects.enter(project.label)
-      }
+      // The NAME only, no verb: the caret beside it already owns "show / hide these
+      // sessions", and two controls in one row answering to the same name is a maze
+      // for anyone navigating by name. The glyph is aria-hidden and a tooltip only
+      // speaks on hover, so the auto cue has to ride here to reach a screen reader.
+      aria-label={project.isAuto ? `${project.label} (${s.projects.autoDiscovered})` : project.label}
       labelClassName={cn('hover:text-foreground hover:underline', isActive && 'text-foreground')}
-      onClick={() => onEnter?.(project.id)}
+      onClick={labelAction}
     >
       {project.label}
     </SidebarRowLink>

@@ -2,25 +2,21 @@ import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { NO_PROJECT_ID, type SidebarProjectTree } from '@/app/chat/sidebar/projects/workspace-groups'
-import { $sidebarAgentsGrouped, setSidebarAgentsGrouped } from '@/store/layout'
+import { $sidebarProjectsOpen, workspaceNodeOpen } from '@/store/layout'
 import { $activeGatewayProfile, $profileScope, ALL_PROFILES, setShowAllProfiles } from '@/store/profile'
 import { $currentCwd, $selectedStoredSessionId, $sessions, applyConfiguredDefaultProjectDir } from '@/store/session'
 
 import {
   $activeProjectId,
+  $groupTree,
   $projects,
-  $projectScope,
   $projectsRpcAvailable,
   $projectTree,
   $worktreeRefreshToken,
-  ALL_PROJECTS,
-  $groupTree,
   createProject,
-  enterProject,
+  fetchProjectSessions,
   fileSession,
   fileSessionUnderNode,
-  exitProjectScope,
-  fetchProjectSessions,
   openProjectCreate,
   pickProjectFolder,
   projectIdForCwd,
@@ -29,6 +25,7 @@ import {
   refreshProjectTree,
   refreshWorktrees,
   resolveNewSessionCwd,
+  revealProject,
   scanAndRecordRepos,
   startWorkInRepo
 } from './projects'
@@ -101,37 +98,33 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-describe('project scope', () => {
+describe('revealProject', () => {
+  // There is no project SCOPE any more. Revealing a project opens its folder in the one
+  // list; it must never narrow the sidebar to that project the way entering used to.
   beforeEach(() => {
     window.localStorage.clear()
-    $projectScope.set(ALL_PROJECTS)
+    $sidebarProjectsOpen.set(false)
   })
 
-  it('defaults to ALL_PROJECTS', () => {
-    expect($projectScope.get()).toBe(ALL_PROJECTS)
-  })
-
-  it('enterProject scopes the sidebar to the project id', () => {
+  it('opens the folder and un-folds the Projects section that holds it', () => {
     // setActiveProject fires best-effort (no gateway in test → it rejects and is
-    // swallowed); the synchronous scope change is what matters here.
-    enterProject('p_123')
-    expect($projectScope.get()).toBe('p_123')
+    // swallowed); the synchronous view change is what matters here.
+    revealProject('p_123')
+
+    expect($sidebarProjectsOpen.get()).toBe(true)
+    expect(workspaceNodeOpen('p_123')).toBe(true)
   })
 
-  it('exitProjectScope returns to the overview', () => {
-    enterProject('p_123')
-    exitProjectScope()
-    expect($projectScope.get()).toBe(ALL_PROJECTS)
+  it('reveals the synthetic Home bucket the same way', () => {
+    revealProject(NO_PROJECT_ID)
+
+    expect(workspaceNodeOpen(NO_PROJECT_ID)).toBe(true)
   })
 
-  it('entering the synthetic Home bucket still scopes (no active pin)', () => {
-    enterProject(NO_PROJECT_ID)
-    expect($projectScope.get()).toBe(NO_PROJECT_ID)
-  })
+  it('leaves no persisted scope behind for a new chat to inherit', () => {
+    revealProject('p_abc')
 
-  it('persists the scope to localStorage', () => {
-    enterProject('p_abc')
-    expect(window.localStorage.getItem('hermes.desktop.projectScope')).toBe('p_abc')
+    expect(window.localStorage.getItem('hermes.desktop.projectScope')).toBeNull()
   })
 })
 
@@ -164,7 +157,7 @@ describe('projects RPC profile forwarding', () => {
     await fetchProjectSessions('p_123')
 
     expect(request).toHaveBeenNthCalledWith(1, 'projects.list', { profile: 'coder' })
-    expect(request).toHaveBeenNthCalledWith(2, 'projects.tree', { preview_limit: 3, profile: 'coder' })
+    expect(request).toHaveBeenNthCalledWith(2, 'projects.tree', { preview_limit: 12, profile: 'coder' })
     expect(request).toHaveBeenNthCalledWith(3, 'projects.project_sessions', {
       profile: 'coder',
       project_id: 'p_123'
@@ -189,7 +182,6 @@ describe('projects RPC profile forwarding', () => {
 
 describe('resolveNewSessionCwd', () => {
   beforeEach(() => {
-    $projectScope.set(ALL_PROJECTS)
     applyConfiguredDefaultProjectDir('/home/user/configured')
     $currentCwd.set('')
     $selectedStoredSessionId.set(null)
@@ -201,21 +193,24 @@ describe('resolveNewSessionCwd', () => {
 
   afterEach(() => {
     applyConfiguredDefaultProjectDir(null)
-    $projectScope.set(ALL_PROJECTS)
     $currentCwd.set('')
     $selectedStoredSessionId.set(null)
     $sessions.set([])
   })
 
-  it('starts a chat detached inside Home, ignoring the configured default dir', () => {
-    // Attaching the default dir here would move the new chat out of Home the
-    // moment it was created — "no folder" is what the bucket means.
-    enterProject(NO_PROJECT_ID)
+  it('never inherits the project the sidebar happens to be showing', () => {
+    // The behaviour this replaces: opening a project's folder to look at it decided
+    // where the NEXT conversation would run. Looking is not choosing — a chat's
+    // workspace is picked in the composer's setup row and passed explicitly.
+    $projectTree.set([
+      { id: 'p_open', label: 'Open', path: '/www/open', repos: [], sessionCount: 0 } as SidebarProjectTree
+    ])
+    revealProject('p_open')
 
-    expect(resolveNewSessionCwd()).toBe('')
+    expect(resolveNewSessionCwd()).toBe('/home/user/configured')
   })
 
-  it('still falls back to the configured default outside Home', () => {
+  it('falls back to the configured default', () => {
     expect(resolveNewSessionCwd()).toBe('/home/user/configured')
   })
 
@@ -412,7 +407,7 @@ describe('pickProjectFolder', () => {
 describe('createProject', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    setSidebarAgentsGrouped(false)
+    $sidebarProjectsOpen.set(false)
     $activeProjectId.set(null)
     $projectsRpcAvailable.set(null)
     $projects.set([])
@@ -443,7 +438,7 @@ describe('createProject', () => {
     expect($projectTree.get()).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.id })]))
     expect($activeProjectId.get()).toBe(created.id)
     expect(hermes.hermesApi).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '/api/profiles/projects/tree?preview_limit=3' })
+      expect.objectContaining({ path: '/api/profiles/projects/tree?preview_limit=12' })
     )
   })
 
@@ -485,7 +480,9 @@ describe('createProject', () => {
 
     expect(result).toEqual(created)
     expect(request).toHaveBeenCalledWith('projects.create', expect.objectContaining({ name: 'Demo' }))
-    expect($sidebarAgentsGrouped.get()).toBe(true)
+    // Creating a project reveals it rather than switching the sidebar into a mode.
+    expect($sidebarProjectsOpen.get()).toBe(true)
+    expect(workspaceNodeOpen('p_new')).toBe(true)
     expect($activeProjectId.get()).toBe('p_new')
   })
 

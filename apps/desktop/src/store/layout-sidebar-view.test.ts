@@ -21,9 +21,9 @@ beforeEach(() => {
 })
 
 describe('the sidebar as it ships', () => {
-  it('remembers expanded project previews across grouping changes and clears them on reset', () => {
+  it('remembers expanded folder previews across grouping changes and clears them on reset', () => {
     expect($sidebarShowAllSessions.get()).toBe(false)
-    setSidebarGrouping('project')
+    setSidebarGrouping('status')
     setSidebarShowAllSessions(true)
     setSidebarGrouping('date')
 
@@ -53,7 +53,7 @@ describe('the sidebar as it ships', () => {
   })
 
   it('is what reset puts back — every knob, not just the filters', () => {
-    setSidebarGrouping('project')
+    setSidebarGrouping('status')
     setSidebarOrdering('cost')
     toggleSidebarRowMeta('updated')
     toggleSidebarRowMeta('cost')

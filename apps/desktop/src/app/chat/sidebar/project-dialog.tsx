@@ -26,10 +26,12 @@ import {
   addProjectFolder,
   clearNewProjectDropPlacement,
   closeProjectDialog,
+  createGroup,
   createProject,
   generateProjectIdea,
   pickProjectFolder,
-  renameProject
+  renameProject,
+  updateGroup
 } from '@/store/projects'
 
 // Single dialog mounted once in the sidebar; it renders create / rename /
@@ -38,9 +40,13 @@ import {
 export function ProjectDialog() {
   const { t } = useI18n()
   const p = t.sidebar.projects
+  const g = t.sidebar.groups
   const state = useStore($projectDialog)
   const open = state !== null
   const mode = state?.mode ?? 'create'
+  // A group is a name and nothing else — no folders, no idea file — because it is not
+  // a place. Both group modes therefore render the name field alone.
+  const groupMode = mode === 'create-group' || mode === 'rename-group'
 
   const [name, setName] = useState('')
   const [folders, setFolders] = useState<string[]>([])
@@ -136,6 +142,16 @@ export function ProjectDialog() {
     const trimmed = name.trim()
     const projectId = state?.projectId
 
+    if (groupMode) {
+      if (trimmed) {
+        await runSubmit(() =>
+          mode === 'rename-group' && projectId ? updateGroup(projectId, { name: trimmed }) : createGroup(trimmed)
+        )
+      }
+
+      return
+    }
+
     if (mode === 'rename' && projectId) {
       if (trimmed) {
         await runSubmit(() => renameProject(projectId, trimmed))
@@ -175,7 +191,15 @@ export function ProjectDialog() {
     }
   }
 
-  const title = mode === 'rename' ? p.renameTitle : mode === 'add-folder' ? p.addFolderTitle : p.createTitle
+  const title = groupMode
+    ? mode === 'rename-group'
+      ? g.renameTitle
+      : g.createTitle
+    : mode === 'rename'
+      ? p.renameTitle
+      : mode === 'add-folder'
+        ? p.addFolderTitle
+        : p.createTitle
 
   return (
     <Dialog onOpenChange={onOpenChange} open={open}>
@@ -183,6 +207,7 @@ export function ProjectDialog() {
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           {mode === 'create' && <DialogDescription>{p.createDesc}</DialogDescription>}
+          {mode === 'create-group' && <DialogDescription>{g.createDesc}</DialogDescription>}
         </DialogHeader>
 
         {mode !== 'add-folder' && (
@@ -198,7 +223,7 @@ export function ProjectDialog() {
                 onOpenChange(false)
               }
             }}
-            placeholder={p.namePlaceholder}
+            placeholder={groupMode ? g.namePlaceholder : p.namePlaceholder}
             ref={nameRef}
             value={name}
           />
@@ -324,7 +349,7 @@ export function ProjectDialog() {
               onClick={() => void submit()}
               type="button"
             >
-              {mode === 'rename' ? t.common.save : p.create}
+              {mode === 'rename' || mode === 'rename-group' ? t.common.save : p.create}
             </Button>
           </DialogFooter>
         )}

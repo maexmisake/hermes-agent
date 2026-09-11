@@ -25,10 +25,14 @@ vi.mock('@/i18n', () => ({
   })
 }))
 
+// `toggleSpy` lets one test observe the open/close call the row makes; every other
+// test gets the default no-op.
+let toggleSpy = vi.fn()
+
 vi.mock('./model', () => ({
   PROJECT_PREVIEW_COUNT: 3,
   latestProjectSessions: () => [],
-  useWorkspaceNodeOpen: () => [false, vi.fn()]
+  useWorkspaceNodeOpen: () => [false, (...args: unknown[]) => toggleSpy(...args)]
 }))
 
 // ProjectMenu (the kebab) has its own dedicated test file — stub it here so
@@ -45,6 +49,10 @@ const project = { id: 'p1', label: 'Test D' } as unknown as SidebarProjectTree
 const tipTrigger = (el: HTMLElement) => el.closest('[data-slot="tooltip-trigger"]')
 
 describe('ProjectOverviewRow', () => {
+  afterEach(() => {
+    toggleSpy = vi.fn()
+  })
+
   it('wraps the "new session" add button in a Tip with the project-scoped label', () => {
     render(<ProjectOverviewRow onNewSession={vi.fn()} project={project} />)
 
@@ -70,6 +78,26 @@ describe('ProjectOverviewRow', () => {
     render(<ProjectOverviewRow project={project} />)
 
     expect(screen.queryByRole('button', { name: 'Show Test D sessions' })).toBeNull()
+  })
+
+  it('opens the folder in place when the label is clicked, instead of drilling in', () => {
+    // The drill-in this replaced scoped the whole sidebar to one project and hid every
+    // other conversation. With no `onEnter`, the label is a second hit target for the
+    // caret and nothing navigates.
+    const toggle = vi.fn()
+    toggleSpy = toggle
+
+    render(
+      <ProjectOverviewRow
+        previewSessions={[{ id: 's1' } as unknown as SessionInfo]}
+        project={project}
+        renderRows={() => null}
+      />
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Test D' }))
+
+    expect(toggle).toHaveBeenCalled()
   })
 
   it('offers the "new session" add button on Home, which starts one with no folder', () => {
@@ -101,7 +129,9 @@ describe('ProjectOverviewRow', () => {
 
     expect(container.querySelector('.codicon-folder-library')).toBeTruthy()
     expect(container.querySelector('.codicon-repo')).toBeNull()
-    expect(screen.getByRole('button', { name: 'Enter Explicit' })).toBeTruthy()
+    // The name alone — the caret owns the show/hide verb, so the two controls in the
+    // row never answer to the same accessible name.
+    expect(screen.getByRole('button', { name: 'Explicit' })).toBeTruthy()
   })
 
   it('auto-discovered repos get the repo glyph, an "Auto-discovered" tooltip, and an accessible name that says so', () => {
@@ -112,7 +142,7 @@ describe('ProjectOverviewRow', () => {
     expect(container.querySelector('.codicon-repo')).toBeTruthy()
     expect(container.querySelector('.codicon-folder-library')).toBeNull()
 
-    const link = screen.getByRole('button', { name: 'Enter my-repo (Auto-discovered)' })
+    const link = screen.getByRole('button', { name: 'my-repo (Auto-discovered)' })
     expect(tipTrigger(link)).toBeTruthy()
   })
 })

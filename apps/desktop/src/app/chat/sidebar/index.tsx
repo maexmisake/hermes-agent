@@ -40,6 +40,7 @@ import {
   $sidebarCronOpen,
   $sidebarFiltersActive,
   $sidebarGrouping,
+  $sidebarGroupsOpen,
   $sidebarMessagingOpenIds,
   $sidebarOrdering,
   $sidebarPinsOpen,
@@ -48,6 +49,7 @@ import {
   $sidebarProfileFilter,
   $sidebarProjectFilter,
   $sidebarProjectOrderIds,
+  $sidebarProjectsOpen,
   $sidebarRecentsOpen,
   $sidebarSessionOrderIds,
   $sidebarSessionOrderManual,
@@ -61,8 +63,10 @@ import {
   SESSION_SEARCH_FOCUS_EVENT,
   setPinnedSessionOrder,
   setSidebarCronOpen,
+  setSidebarGroupsOpen,
   setSidebarPinsOpen,
   setSidebarProjectOrderIds,
+  setSidebarProjectsOpen,
   setSidebarRecentsOpen,
   setSidebarSessionOrderIds,
   setSidebarSessionOrderManual,
@@ -84,19 +88,18 @@ import {
 } from '@/store/profile'
 import {
   $activeProjectId,
+  $groupTree,
   $newProjectDropPlacement,
   $projects,
-  $projectScope,
   $projectTree,
   $projectTreeLoading,
   $reposScanning,
-  ALL_PROJECTS,
-  enterProject,
-  exitProjectScope,
+  openGroupCreate,
   openProjectCreate,
+  refreshGroups,
   refreshProjects,
   refreshProjectTree,
-  refreshWorktrees,
+  reorderGroups,
   scanAndRecordRepos
 } from '@/store/projects'
 import {
@@ -120,13 +123,12 @@ import {
   $sessionsLoading,
   $unreadFinishedSessionIds,
   markAllSessionsRead,
-  sessionPinId,
-  setCurrentCwd
+  sessionPinId
 } from '@/store/session'
 import { $sessionDotStateById, sessionStatusBucket } from '@/store/session-dot-state'
 import { $unconfirmedPinWrites } from '@/store/session-pin-sync'
 import { $removedSessionIds } from '@/store/session-removal'
-import { $focusedSessionIsTile, $focusedStoredSessionId, $workingSessionIds } from '@/store/session-states'
+import { $focusedSessionIsTile, $focusedStoredSessionId } from '@/store/session-states'
 import { ackAllSessionsRead } from '@/store/session-unread'
 import { markSessionUnread } from '@/store/session-unread-remote'
 import { $archivedSessions, loadArchivedSessions } from '@/store/sidebar-archive'
@@ -157,32 +159,24 @@ import { resolveLiveProjectFilter } from './project-filter'
 import {
   excludeProjectSessions,
   orderProjectsByIds,
-  overlayLiveLanes,
   overlayLivePreviews,
   PROJECT_PREVIEW_COUNT,
-  ProjectBackRow,
-  ProjectMenu,
-  projectTreeCwd,
-  reconcileEnteredProjectSessions,
+  sessionFolderId,
   sessionMatchesProjectFilter,
   sessionRecency as sessionTime,
   type SidebarProjectTree,
   type SidebarWorkspaceTree,
-  sortProjectsForOverview,
-  StartWorkButton,
-  useRepoWorktreeMap
+  sortProjectsForOverview
 } from './projects'
 import { WorktreeDialog } from './projects/worktree-dialog'
 import {
   SidebarBlankState,
-  SidebarLoadErrorState,
   SidebarPinnedEmptyState,
   SidebarSessionSkeletons
 } from './section-states'
 import { buildSessionByAnyId, resolvePinnedSessions } from './session-index'
 import { SidebarSessionsSection, VIRTUALIZE_THRESHOLD } from './sessions-section'
 import { CONTEXT_SPLIT_KIT, SplitSubmenu } from './split-submenu'
-import { useEnteredProjectSessions } from './use-entered-project-sessions'
 
 // Non-session groups (messaging platforms) stay compact: show a few rows up
 // front, reveal more in larger steps on demand. Keeps a busy platform from
@@ -383,13 +377,14 @@ export function ChatSidebar({
   // The active sort key as an id order. The flat list applies it within its
   // dividers; groups apply it to their own lanes.
   const sortOrderIds = useStore($sidebarSessionRankIds)
-  const agentsGrouped = grouping === 'project'
   const showAllSessions = useStore($sidebarShowAllSessions)
   const pinnedSessionIds = useStore($pinnedSessionIds)
   const unconfirmedPinWrites = useStore($unconfirmedPinWrites)
   const pinsOpen = useStore($sidebarPinsOpen)
   const agentsOpen = useStore($sidebarRecentsOpen)
   const cronOpen = useStore($sidebarCronOpen)
+  const projectsOpen = useStore($sidebarProjectsOpen)
+  const groupsOpen = useStore($sidebarGroupsOpen)
   // The sidebar highlight tracks the FOCUSED session — the interacted tile's
   // tab, else the main selection — so it stays 1:1 with whatever tab is active.
   const selectedSessionId = useStore($focusedStoredSessionId)
@@ -436,6 +431,7 @@ export function ChatSidebar({
   const projectOrderIds = useStore($sidebarProjectOrderIds)
   const projects = useStore($projects)
   const projectTree = useStore($projectTree)
+  const groupTree = useStore($groupTree)
 
   // The persisted project filter's storage is shared across profiles, so ids
   // picked in another profile don't resolve in the active one and the raw
@@ -450,7 +446,6 @@ export function ChatSidebar({
   const removedSessionIds = useStore($removedSessionIds)
   const reposScanning = useStore($reposScanning)
   const activeProjectId = useStore($activeProjectId)
-  const projectScope = useStore($projectScope)
   const currentCwd = useStore($currentCwd)
   const gatewayState = useStore($gatewayState)
   const dismissedAutoProjects = useStore($dismissedAutoProjectIds)
@@ -743,7 +738,10 @@ export function ChatSidebar({
   // Workspace grouping is a `project -> repo -> lane -> sessions` tree computed
   // authoritatively on the backend (projects.tree). Parents reorder via
   // workspaceParentOrderIds; worktrees within a parent via workspaceOrderIds.
-  const worktreeGroupingActive = agentsGrouped && !showArchived
+  // Folders are always on screen now, so the tree is always worth having — there is no
+  // "grouped mode" left to gate its fetches behind. Archived is the one view with no
+  // folders: it is its own query over a different set.
+  const foldersVisible = !showArchived
   const gatewayReady = gatewayState === 'open'
 
   // The backend project tree is a structural snapshot, NOT a per-message feed.
@@ -758,8 +756,9 @@ export function ChatSidebar({
       return
     }
 
-    if (worktreeGroupingActive) {
+    if (foldersVisible) {
       void refreshProjects()
+      void refreshGroups()
 
       // The all-profiles tree is served off every profile's databases at once
       // and deliberately leaves discovery out — a repo with no sessions is the
@@ -788,18 +787,18 @@ export function ChatSidebar({
     const warm = window.setTimeout(() => void refreshProjectTree(), PROJECT_TREE_WARM_MS)
 
     return () => window.clearTimeout(warm)
-  }, [activeConnectionId, worktreeGroupingActive, showAllProfiles, profileScope, gatewayReady])
+  }, [activeConnectionId, foldersVisible, showAllProfiles, profileScope, gatewayReady])
 
   // Widen the existing tree query when the user expands previews, without
   // repeating repo discovery. Initial load/scope changes use the effect above.
   useEffect(
     () =>
       $sidebarShowAllSessions.listen(() => {
-        if (gatewayReady && worktreeGroupingActive) {
+        if (gatewayReady && foldersVisible) {
           void refreshProjectTree()
         }
       }),
-    [gatewayReady, worktreeGroupingActive]
+    [gatewayReady, foldersVisible]
   )
 
   // Sessions the branch join can't answer for get one look at their own
@@ -886,7 +885,7 @@ export function ChatSidebar({
   // session regrouping); the heavy disk crawl that surfaces brand-new repos is
   // throttled. Agent-driven changes already refresh via $workspaceChangeTick.
   useEffect(() => {
-    if (!worktreeGroupingActive || !gatewayReady) {
+    if (!foldersVisible || !gatewayReady) {
       return
     }
 
@@ -922,7 +921,7 @@ export function ChatSidebar({
       window.removeEventListener('focus', onActive)
       document.removeEventListener('visibilitychange', onActive)
     }
-  }, [worktreeGroupingActive, showAllProfiles, gatewayReady])
+  }, [foldersVisible, showAllProfiles, gatewayReady])
 
   // Apply the persisted repo + worktree orders to a project's repo subtrees.
   const orderRepos = useCallback(
@@ -975,218 +974,54 @@ export function ChatSidebar({
     s
   ])
 
-  // The overview only renders in grouped mode; the model stays live regardless
-  // so scoping is consistent across views.
-  const agentProjectTree = worktreeGroupingActive ? projectModel : undefined
+  // ── One list ───────────────────────────────────────────────────────────────
+  // Projects and groups are collapsible FOLDERS inside the same list as everything
+  // else, never a mode you enter. What this replaces scoped the whole sidebar to one
+  // project and hid every other conversation; nothing here can hide a session. A
+  // folder holds only its own rows, and whatever no folder claims stays in the flat
+  // list below, so every chat is reachable without changing what you are looking at.
 
-  // ── Project switcher (drill-in) ────────────────────────────────────────────
-  // Grouped, single-profile view is a project switcher: ALL_PROJECTS shows the
-  // overview (a list you click into); a concrete scope means you've "entered" a
-  // project, so the Sessions list shows ONLY that project's worktrees/sessions.
-  const projectsActive = Boolean(agentProjectTree?.length)
-
-  // The overview node for the entered project (structure + counts, empty lanes).
-  const overviewEnteredProject =
-    projectsActive && projectScope !== ALL_PROJECTS
-      ? agentProjectTree?.find(node => node.id === projectScope)
-      : undefined
-
-  const inProject = Boolean(overviewEnteredProject)
-  const enteredProjectId = overviewEnteredProject?.id
-
-  // Entering a project lazily hydrates its full lanes (repo -> lane -> sessions)
-  // from the backend — same grouping/ids as the overview, just with rows.
-  const {
-    project: enteredProjectTree,
-    failed: projectLoadFailed,
-    loading: projectLoading,
-    retry: retryProject
-  } = useEnteredProjectSessions(enteredProjectId, gatewayReady, projectTree, `${activeConnectionId}:${profileScope}`)
-
-  // Prefer the hydrated tree; fall back to the overview node (empty lanes) while
-  // the drill-in fetch is in flight, so the header/structure render immediately.
-  const enteredProject = useMemo<SidebarProjectTree | undefined>(() => {
-    if (!overviewEnteredProject) {
-      return undefined
-    }
-
-    const hydrated =
-      enteredProjectTree && enteredProjectTree.id === overviewEnteredProject.id
-        ? enteredProjectTree
-        : overviewEnteredProject
-
-    // The live-session overlay (creates/evictions) is applied per-repo in
-    // RepoFlatSection, AFTER the visual git-worktree lanes are merged in (so
-    // out-of-tree worktrees can be placed). Here we just order the snapshot and
-    // drop pinned rows — the hydrated lanes come straight from the backend, so
-    // they haven't been through projectModel's filter.
-    // The label comes from the overview node either way — that's the model's
-    // presentation copy (Home is translated there), not the raw payload's.
-    return excludeProjectSessions(
-      { ...hydrated, label: overviewEnteredProject.label, repos: orderRepos(hydrated.repos) },
-      isHiddenFromProjects
-    )
-  }, [overviewEnteredProject, enteredProjectTree, orderRepos, isHiddenFromProjects])
-
-  const enteredProjectOverlaySessions = useMemo(
-    () => reconcileEnteredProjectSessions(agentSessions, overviewEnteredProject?.previewSessions),
-    [agentSessions, overviewEnteredProject?.previewSessions]
+  // Group buckets get the same presentation pass project nodes get, so a group can't
+  // resurface a row the Pinned section or an active filter already took out.
+  const groupModel = useMemo<SidebarProjectTree[]>(
+    () => groupTree.map(group => excludeProjectSessions(group, isHiddenFromProjects)),
+    [groupTree, isHiddenFromProjects]
   )
 
-  // Overlay live `$sessions` onto the entered project so a just-created session
-  // (which the backend snapshot hasn't folded in yet) counts as content and
-  // renders immediately. Also carry over the overview's current preview rows:
-  // its project tree and the separately hydrated drill-in can resolve at
-  // different times, but a row visible in the overview must not disappear on
-  // entry. The backend seeds each project folder as an (empty) repo, so the
-  // overlay always has a lane to place a missing in-project session into.
-  const enteredProjectContent = useMemo(
+  const liveGroupIds = useMemo(() => new Set(groupModel.map(group => group.id)), [groupModel])
+  const folderNodes = useMemo(() => [...projectModel, ...groupModel], [projectModel, groupModel])
+
+  // Rows for every folder at once, keyed by node id, with live `$sessions` overlaid so a
+  // just-created chat lands under its folder immediately — the same treatment that keeps
+  // the flat list instant — instead of waiting for the next backend snapshot.
+  const folderRows = useMemo<Record<string, SessionInfo[]>>(
     () =>
-      enteredProject ? overlayLiveLanes(enteredProject, enteredProjectOverlaySessions, removedSessionIds) : undefined,
-    [enteredProject, enteredProjectOverlaySessions, removedSessionIds]
+      overlayLivePreviews(folderNodes, agentSessions, projects, showAllSessions ? Infinity : PROJECT_PREVIEW_COUNT, {
+        groupIds: liveGroupIds,
+        removed: removedSessionIds,
+        // Rank before the trim, so "the 8 priciest in this project" isn't "the 8 most
+        // recent, priciest first".
+        rankIds: sortOrderIds
+      }),
+    [folderNodes, agentSessions, projects, liveGroupIds, removedSessionIds, sortOrderIds, showAllSessions]
   )
 
-  const scopedRepoPaths = useMemo(
-    () =>
-      enteredProject ? enteredProject.repos.map(repo => repo.path).filter((path): path is string => Boolean(path)) : [],
-    [enteredProject]
-  )
+  // The flat list is what no folder claimed. Computed from the SAME resolver the folders
+  // fill from, so a row can never be in both places or in neither: one function decides,
+  // and the two consumers read its answer.
+  const looseSessions = useMemo(() => {
+    const rendered = new Set(folderNodes.map(node => node.id))
 
-  // git worktree list is a VISUAL-only enhancer (empty lanes); never membership.
-  const inEnteredProject = Boolean(enteredProject && !showAllProfiles)
-  const [scopedRepoWorktrees] = useRepoWorktreeMap(scopedRepoPaths, inEnteredProject)
+    return agentSessions.filter(session => {
+      const folder = sessionFolderId(session, projects, liveGroupIds)
 
-  // Re-probe worktree lanes on out-of-band git changes the renderer can't see.
-  // A turn can `git worktree add/remove` in the terminal (e.g. you ask Hermes to
-  // "remove that worktree"), and the window never blurs during an in-app chat,
-  // so nothing would otherwise re-run the visual probe. Re-sync when a working
-  // session settles (its turn finished) or the window refocuses (an external
-  // terminal may have changed things) — only while a project is entered, and
-  // only the cheap per-repo `git worktree list`, never the heavy tree scan.
-  //
-  // Listened to rather than rendered from: a settling turn is a side effect,
-  // and reading it with `useStore` repainted this whole component — every
-  // section, every row — on each status edge, to run an effect that touches no
-  // markup. The rows subscribe to their own status, so nothing above them needs
-  // to re-render for one of them to change color.
-  useEffect(() => {
-    if (!inEnteredProject) {
-      return
-    }
-
-    let previous = $workingSessionIds.get()
-
-    return $workingSessionIds.listen(working => {
-      // A session leaving the working set means its turn just completed.
-      const aTurnSettled = previous.some(id => !working.includes(id))
-
-      previous = working
-
-      if (aTurnSettled) {
-        refreshWorktrees()
-      }
+      return !folder || !rendered.has(folder)
     })
-  }, [inEnteredProject])
+  }, [agentSessions, folderNodes, projects, liveGroupIds])
 
-  useEffect(() => {
-    if (!inEnteredProject) {
-      return
-    }
-
-    const onFocus = () => refreshWorktrees()
-    window.addEventListener('focus', onFocus)
-
-    return () => window.removeEventListener('focus', onFocus)
-  }, [inEnteredProject])
-
-  const lastProjectCwdSyncRef = useRef<null | string>(null)
-
-  const syncProjectCwd = useCallback(
-    (project: SidebarProjectTree) => {
-      const target = projectTreeCwd(project)
-
-      if (target && target !== currentCwd) {
-        setCurrentCwd(target)
-      }
-    },
-    [currentCwd]
-  )
-
-  // eslint-disable-next-line no-restricted-syntax -- legitimate non-atom ref write (see eslint rule comment)
-  useEffect(() => {
-    if (!inProject || !enteredProject) {
-      lastProjectCwdSyncRef.current = null
-
-      return
-    }
-
-    if (lastProjectCwdSyncRef.current === enteredProject.id) {
-      return
-    }
-
-    syncProjectCwd(enteredProject)
-    lastProjectCwdSyncRef.current = enteredProject.id
-  }, [inProject, enteredProject, syncProjectCwd])
-
-  // A persisted scope can go stale (project archived/removed, or a profile
-  // switch swapped the whole catalog). Once projects have loaded, drop back to
-  // the overview if the scoped id is gone.
-  useEffect(() => {
-    if (projectScope !== ALL_PROJECTS && projectsActive && !enteredProject) {
-      exitProjectScope()
-    }
-  }, [projectScope, projectsActive, enteredProject])
-
-  // The project overview (drill-in list) vs. the entered project's content.
-  const projectOverview = projectsActive && !inProject ? agentProjectTree : undefined
-
-  // Preview rows come from the backend tree (each project carries its
-  // most-recent sessions), overlaid with live $sessions so a just-created
-  // session shows under its project instantly (and with its working arc),
-  // matching the flat Recents list. Keyed by project id for the rows.
-  const overviewPreviews = useMemo<Record<string, SessionInfo[]>>(
-    () =>
-      overlayLivePreviews(
-        projectOverview ?? [],
-        agentSessions,
-        projects,
-        showAllSessions ? Infinity : PROJECT_PREVIEW_COUNT,
-        {
-          removed: removedSessionIds,
-          // Rank before the trim, so "3 priciest in this project" isn't "3 most
-          // recent, priciest first".
-          rankIds: sortOrderIds
-        }
-      ),
-    [projectOverview, agentSessions, projects, removedSessionIds, sortOrderIds, showAllSessions]
-  )
-
-  const onEnterProject = useCallback(
-    (id: string) => {
-      const project = projectModel.find(node => node.id === id)
-
-      if (project) {
-        syncProjectCwd(project)
-      }
-
-      enterProject(id)
-    },
-    [projectModel, syncProjectCwd]
-  )
-
-  // The Sessions section is a project switcher in grouped mode: its label reads
-  // "Sessions" when flat, "Projects" at the overview, and the project's name
-  // once you've entered one.
-  const sessionsLabel =
-    inProject && enteredProject ? enteredProject.label : worktreeGroupingActive ? s.projects.sectionLabel : s.sessions
-
-  // Mirror the section's skeleton gate (projectsLoading + nothing to show yet):
-  // while the skeleton is up there's no point also spinning the header count.
-  const projectsSkeletonVisible =
-    worktreeGroupingActive &&
-    projectTreeLoading &&
-    !projectOverview?.length &&
-    !(inProject && (enteredProject?.sessionCount ?? 0) > 0)
+  // Skeletons only while the tree has genuinely nothing to show yet; a background
+  // refresh keeps the folders on screen rather than flashing them away.
+  const projectsSkeletonVisible = projectTreeLoading && folderNodes.length === 0
 
   const runKeyedLoad = useCallback(
     (
@@ -1358,30 +1193,19 @@ export function ChatSidebar({
 
   const displayAgentGroups = profileGroups
 
-  // The recents list owns its own (virtualized) scroll container only when it's a
-  // long flat list. In that case it must keep its scroller even in short mode, so
-  // we don't flatten it (flattening would defeat virtualization). Short flat lists
-  // and grouped views (profile groups or the worktree tree) flatten into the
-  // single outer scroll instead.
-  // Whichever grouping is active, the flat set of repo subtrees on screen — the
-  // single source for reconciling repo/worktree order, whether repos hang off
-  // the bare tree or are nested under projects.
-  const activeRepoTrees = useMemo<SidebarWorkspaceTree[]>(
-    () => (agentProjectTree ? agentProjectTree.flatMap(project => project.repos) : []),
-    [agentProjectTree]
-  )
-
-  // Mirror the section's own virtualization inputs (the props it receives),
-  // not the raw tree cache: agentProjectTree persists after leaving Project
-  // grouping, and keying on it here while the section keys on projectOverview
-  // (which is nulled the moment grouping changes) left the two disagreeing —
-  // wrapper classes built for a virtualized list around a non-virtual one.
-  // Entered-project content is the third prop that suppresses virtualization.
+  // The flat list owns its own (virtualized) scroll container only when it IS a long
+  // flat list; it must then keep that scroller even in short mode, or virtualization
+  // is defeated. Profile groups flatten into the single outer scroll instead.
+  // Folders live in their own sections now, so they no longer suppress this.
   const recentsVirtualizes =
-    !displayAgentGroups?.length &&
-    !projectOverview?.length &&
-    !(inProject && enteredProjectContent) &&
-    displayAgentSessions.length >= VIRTUALIZE_THRESHOLD
+    !displayAgentGroups?.length && displayAgentSessions.length >= VIRTUALIZE_THRESHOLD
+
+  // Every repo subtree on screen — the single source for reconciling the persisted
+  // repo/worktree order against what the folders actually render.
+  const activeRepoTrees = useMemo<SidebarWorkspaceTree[]>(
+    () => folderNodes.flatMap(project => project.repos),
+    [folderNodes]
+  )
 
   // Keep the persisted parent + worktree orders reconciled with what's on screen:
   // freshly-seen repos/worktrees surface at the top, vanished ones drop out of
@@ -1418,21 +1242,16 @@ export function ChatSidebar({
   // Filtered down to nothing still renders the section: the empty state is what
   // tells you the filter — not an empty account — is why the list is bare.
   const showSessionSections =
-    showSessionSkeletons || filtersActive || sortedSessions.length > 0 || projectModel.length > 0
+    showSessionSkeletons || filtersActive || sortedSessions.length > 0 || folderNodes.length > 0
 
-  // The sidebar's session-area mode — exposed as data-attributes so custom
-  // skins can target project mode (overview vs. entered), archived, or search
-  // without relying on internal class names. `data-sessions-project` carries
-  // the entered project's id for per-project targeting.
-  const sessionsMode: 'archived' | 'flat' | 'project' | 'projects' | 'search' = trimmedQuery
+  // The sidebar's session-area mode — a data-attribute so custom skins can target
+  // archived or search without relying on internal class names. There is no longer a
+  // "projects" mode to distinguish: folders and loose chats share one list.
+  const sessionsMode: 'archived' | 'flat' | 'search' = trimmedQuery
     ? 'search'
     : showArchived
       ? 'archived'
-      : inProject
-        ? 'project'
-        : worktreeGroupingActive
-          ? 'projects'
-          : 'flat'
+      : 'flat'
 
   // Each reorderable list reports its OWN new id order; persisting is a direct,
   // typed write — no id-prefix sniffing to figure out which level moved.
@@ -1444,6 +1263,13 @@ export function ChatSidebar({
   // Persist the new project overview order (drag-to-reorder); orderByIds applies
   // it over the default sort, so stale/new ids reconcile on the next render.
   const reorderProjects = (ids: string[]) => setSidebarProjectOrderIds(ids)
+
+  // Group order is BACKEND state (projects.db `sort_order`), not a local view
+  // preference like the project order above: a group is a thing the user made, so its
+  // place in the list belongs with its definition rather than in this window's storage.
+  const reorderGroupNodes = (ids: string[]) => {
+    reorderGroups(ids).catch(err => notifyError(err, s.groups.reorderFailed))
+  }
 
   // Sortable rows carry live session ids; the pinned store is keyed by durable
   // (lineage-root) ids, so translate before persisting the new order.
@@ -1618,7 +1444,6 @@ export function ChatSidebar({
           <div
             className={cn('flex min-h-0 flex-1 flex-col pb-1.75', SCROLL_Y, SCROLL_GUTTER)}
             data-sessions-mode={sessionsMode}
-            data-sessions-project={inProject ? (enteredProjectId ?? undefined) : undefined}
           >
             {trimmedQuery && (
               <SidebarSessionsSection
@@ -1673,72 +1498,140 @@ export function ChatSidebar({
               />
             )}
 
-            {!trimmedQuery && inProject && projectLoadFailed && <SidebarLoadErrorState onRetry={retryProject} />}
-            {!trimmedQuery && (
+            {/* Folders first, loose chats after. Each of the three headers folds its
+                whole tier away, and each folder inside folds on its own — but folding
+                is all it does. No section can scope the sidebar to itself. */}
+            {!trimmedQuery && foldersVisible && (
               <SidebarSessionsSection
                 activeProjectId={activeProjectId}
                 activeSessionId={activeSidebarSessionId}
-                // Inbox style is a render variant, not a grouping — it rides
-                // whichever view is active: flat recents, project lanes, and
-                // the overview previews all render the same card.
                 card={cardRows}
-                collapsible={!inProject}
+                contentClassName="flex flex-col gap-px pb-1"
+                dndSensors={dndSensors}
+                emptyState={
+                  projectsSkeletonVisible ? (
+                    <SidebarSessionSkeletons />
+                  ) : (
+                    <div className="px-2 pb-1 pt-0.5 text-[0.6875rem] leading-snug text-(--ui-text-quaternary)">
+                      {s.projects.empty}
+                    </div>
+                  )
+                }
+                headerAction={
+                  <SidebarSectionAddButton
+                    ariaLabel={s.projects.newButton}
+                    onNewProjectDrag={{
+                      // Dragging the "+" arms WHERE the project should start; the dialog
+                      // flow consumes it on create (see $newProjectDropPlacement).
+                      onArm: placement => $newProjectDropPlacement.set(placement)
+                    }}
+                    onPlainClick={openProjectCreate}
+                  />
+                }
+                label={s.projects.sectionLabel}
+                labelMeta={
+                  reposScanning && !projectsSkeletonVisible ? (
+                    <GlyphSpinner ariaLabel={s.loading} className="text-[0.6875rem] text-(--ui-text-quaternary)" />
+                  ) : undefined
+                }
+                onArchiveSession={onArchiveSession}
+                onBranchSession={onBranchSession}
+                onDeleteSession={onDeleteSession}
+                onNewSessionInWorkspace={onNewSessionInWorkspace}
+                onNewSessionSplit={onNewSessionSplit}
+                onReorderProjects={showAllProfiles ? undefined : reorderProjects}
+                onResumeSession={onResumeSession}
+                onToggle={() => setSidebarProjectsOpen(!projectsOpen)}
+                onTogglePin={pinSession}
+                onToggleUnread={toggleUnread}
+                open={projectsOpen}
+                pinned={false}
+                projectOverview={projectModel}
+                projectOverviewPreviews={folderRows}
+                projectsLoading={projectTreeLoading}
+                rootClassName="shrink-0 p-0 pb-1"
+                sessions={[]}
+              />
+            )}
+
+            {!trimmedQuery && foldersVisible && (
+              <SidebarSessionsSection
+                activeSessionId={activeSidebarSessionId}
+                card={cardRows}
+                contentClassName="flex flex-col gap-px pb-1"
+                dndSensors={dndSensors}
+                emptyState={
+                  <div className="px-2 pb-1 pt-0.5 text-[0.6875rem] leading-snug text-(--ui-text-quaternary)">
+                    {s.groups.empty}
+                  </div>
+                }
+                headerAction={
+                  <SidebarSectionAddButton ariaLabel={s.groups.newButton} onPlainClick={openGroupCreate} />
+                }
+                label={s.groups.sectionLabel}
+                onArchiveSession={onArchiveSession}
+                onBranchSession={onBranchSession}
+                onDeleteSession={onDeleteSession}
+                onReorderProjects={showAllProfiles ? undefined : reorderGroupNodes}
+                onResumeSession={onResumeSession}
+                onToggle={() => setSidebarGroupsOpen(!groupsOpen)}
+                onTogglePin={pinSession}
+                onToggleUnread={toggleUnread}
+                open={groupsOpen}
+                pinned={false}
+                projectOverview={groupModel}
+                projectOverviewPreviews={folderRows}
+                rootClassName="shrink-0 p-0 pb-1"
+                sessions={[]}
+              />
+            )}
+
+            {!trimmedQuery && (
+              <SidebarSessionsSection
+                activeSessionId={activeSidebarSessionId}
+                // Inbox style is a render variant, not a grouping — it rides
+                // whichever view is active.
+                card={cardRows}
                 contentClassName={cn(
                   'flex min-h-0 flex-1 flex-col gap-px pb-1.75',
-                  // The section is the ONE authority on whether the virtual
-                  // list owns scrolling: it neutralizes this wrapper scroller
-                  // itself (overflow-visible) when it virtualizes. Gating
-                  // SCROLL_Y here on index's own parallel guess desynced the
-                  // two — a cached project tree flipped this side but not the
-                  // section's, leaving the list with no scroller at all and
-                  // the recents pane rendering blank under Updated grouping.
+                  // The section is the ONE authority on whether the virtual list owns
+                  // scrolling: it neutralizes this wrapper scroller itself when it
+                  // virtualizes.
                   SCROLL_Y,
-                  // Flatten into the single scroll when compact — unless this is the
-                  // virtualized long list, which must keep its own scroller.
                   !recentsVirtualizes && COMPACT_FLAT
                 )}
                 dndSensors={dndSensors}
                 emptyState={
-                  inProject && projectLoadFailed ? null : showSessionSkeletons || (inProject && projectLoading) ? (
+                  showSessionSkeletons ? (
                     <SidebarSessionSkeletons />
                   ) : (
                     <div className="grid min-h-16 place-items-center rounded-lg px-2 text-center text-xs text-(--ui-text-tertiary)">
-                      {inProject
-                        ? s.projectEmpty
-                        : filtersActive
-                          ? s.noFilterMatches
-                          : pinnedSessions.length > 0
-                            ? s.allPinned
+                      {filtersActive
+                        ? s.noFilterMatches
+                        : pinnedSessions.length > 0
+                          ? s.allPinned
+                          : folderNodes.length > 0
+                            ? s.allInFolders
                             : s.noSessions}
                     </div>
                   )
                 }
                 footer={
-                  // Hidden only when workspace-grouped — those groups page
-                  // themselves. Profile groups don't: this one footer fetches the
-                  // next page, which grows every profile at once.
-                  !agentsGrouped && !showSessionSkeletons && hasMoreSessions ? (
+                  !showSessionSkeletons && hasMoreSessions ? (
                     <SidebarLoadMoreRow
                       loading={sessionsLoading || recentsLoadMorePending}
                       onClick={() => void onLoadMoreRecents()}
-                      // Recents are post-filtered to non-project sessions, so a
-                      // backend page size (50) is not a truthful "rows you'll
-                      // see" count. Use the generic label instead of a fake N.
+                      // Recents are post-filtered to the rows no folder claimed, so a
+                      // backend page size is not a truthful "rows you'll see" count.
                       step={0}
                     />
                   ) : null
                 }
                 forceEmptyState={showSessionSkeletons}
                 // Archived is a plain list, and so is a magnitude-ranked one.
-                // Otherwise project lanes stay chronological whatever the flat
-                // list does — only the flat list can swap its dividers for
-                // WORKING / DONE.
                 grouping={showArchived || rankedGlobally ? 'none' : grouping === 'status' ? 'status' : 'date'}
                 groups={displayAgentGroups}
                 headerAction={
-                  // One cluster, not a fragment: the header is justify-between,
-                  // so two children (mark-all + the rest) park the check-all in
-                  // the middle as a blank 24px hole until hover.
                   <div className="flex shrink-0 items-center gap-0.5">
                     {unreadCount > 0 && (
                       <Tip label={s.markAllRead}>
@@ -1748,8 +1641,8 @@ export function ChatSidebar({
                           onClick={event => {
                             event.stopPropagation()
                             markAllSessionsRead()
-                            // Ack the persisted layer too, or the next list
-                            // refresh repaints every dot just dismissed.
+                            // Ack the persisted layer too, or the next list refresh
+                            // repaints every dot just dismissed.
                             ackAllSessionsRead()
                           }}
                           size="icon-xs"
@@ -1759,90 +1652,23 @@ export function ChatSidebar({
                         </Button>
                       </Tip>
                     )}
-                    {inProject && enteredProject ? (
-                      <div className="group/workspace flex shrink-0 items-center gap-0.5">
-                        {enteredProject.path && <StartWorkButton repoPath={enteredProject.path} />}
-                        {/* Home has no folder and no record to rename, theme, or delete. */}
-                        {!enteredProject.isNoProject && (
-                          <ProjectMenu
-                            isActive={enteredProject.id === activeProjectId}
-                            onExitScope={exitProjectScope}
-                            project={enteredProject}
-                            scoped
-                          />
-                        )}
-                        <div className="grid size-6 place-items-center">
-                          <Tip label={s.showProjects}>
-                            <Button
-                              aria-label={s.showProjects}
-                              className={HEADER_NAV_BTN}
-                              onClick={event => {
-                                event.stopPropagation()
-                                exitProjectScope()
-                              }}
-                              size="icon-xs"
-                              variant="ghost"
-                            >
-                              <Codicon name="list-unordered" size="0.75rem" />
-                            </Button>
-                          </Tip>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        {/* The flat-list header "+" is a drag source too — the
-                            same gesture as the nav's "New session" row: drag
-                            it onto a chat zone's tab strip / edge / center to
-                            create the session exactly there. Project-overview
-                            mode drags its "+" (the "New project" button) with
-                            the project-drag variant: a drop opens the SAME
-                            project dialog, and the created project starts at
-                            the dropped spot. */}
-                        <SidebarSectionAddButton
-                          ariaLabel={agentsGrouped ? s.projects.newButton : s.nav['new-session']}
-                          onNewProjectDrag={
-                            agentsGrouped
-                              ? {
-                                  // Dragging the "New project" + arms WHERE the
-                                  // project should start; the dialog flow consumes
-                                  // it on create (see $newProjectDropPlacement).
-                                  onArm: placement => $newProjectDropPlacement.set(placement)
-                                }
-                              : undefined
-                          }
-                          onNewSessionSplit={agentsGrouped ? undefined : onNewSessionSplit}
-                          onPlainClick={() => {
-                            if (agentsGrouped) {
-                              openProjectCreate()
-                            } else {
-                              onNewSessionInWorkspace(null)
-                            }
-                          }}
-                        />
-                        <div className="grid size-6 place-items-center">
-                          <SidebarFilterMenu className={HEADER_NAV_BTN} />
-                        </div>
-                      </>
-                    )}
+                    <SidebarSectionAddButton
+                      ariaLabel={s.nav['new-session']}
+                      onNewSessionSplit={onNewSessionSplit}
+                      onPlainClick={() => onNewSessionInWorkspace(null)}
+                    />
+                    <div className="grid size-6 place-items-center">
+                      <SidebarFilterMenu className={HEADER_NAV_BTN} />
+                    </div>
                   </div>
                 }
-                label={sessionsLabel}
-                labelMeta={
-                  worktreeGroupingActive ? (
-                    reposScanning && !projectsSkeletonVisible ? (
-                      <GlyphSpinner ariaLabel={s.loading} className="text-[0.6875rem] text-(--ui-text-quaternary)" />
-                    ) : undefined
-                  ) : undefined
-                }
-                liveSessions={inProject ? enteredProjectOverlaySessions : undefined}
+                label={s.sessions}
                 manualOrderIds={agentOrderManual ? agentOrderIds : sortOrderIds}
                 onArchiveSession={onArchiveSession}
                 onBranchSession={onBranchSession}
                 onDeleteSession={onDeleteSession}
-                onEnterProject={onEnterProject}
                 onNewSessionInWorkspace={onNewSessionInWorkspace}
                 onNewSessionSplit={onNewSessionSplit}
-                onReorderProjects={showAllProfiles ? undefined : reorderProjects}
                 onReorderSessions={showAllProfiles ? undefined : reorderSessions}
                 onResumeSession={onResumeSession}
                 onToggle={() => setSidebarRecentsOpen(!agentsOpen)}
@@ -1850,26 +1676,16 @@ export function ChatSidebar({
                 onToggleUnread={toggleUnread}
                 open={agentsOpen}
                 pinned={false}
-                projectBackRow={
-                  inProject ? <ProjectBackRow label={s.projects.back} onClick={exitProjectScope} /> : undefined
-                }
-                projectContent={inProject ? enteredProjectContent : undefined}
-                projectOverview={projectOverview}
-                projectOverviewPreviews={overviewPreviews}
-                projectRepoWorktrees={inProject ? scopedRepoWorktrees : undefined}
-                projectsLoading={worktreeGroupingActive ? projectTreeLoading : false}
-                removedSessionIds={inProject ? removedSessionIds : undefined}
                 rootClassName={cn(
                   'min-h-32 flex-1 overflow-hidden p-0',
                   !recentsVirtualizes && 'compact:min-h-0 compact:flex-none compact:overflow-visible'
                 )}
                 sessions={displayAgentSessions}
-                sortable={!showAllProfiles && agentSessions.length > 1}
+                sortable={!showAllProfiles && displayAgentSessions.length > 1}
               />
             )}
 
             {!trimmedQuery &&
-              !worktreeGroupingActive &&
               messagingGroups.map(group => {
                 const visible = messagingVisible[group.sourceId] ?? NON_SESSION_INITIAL_ROWS
                 const shownSessions = group.sessions.slice(0, visible)
@@ -1914,7 +1730,7 @@ export function ChatSidebar({
                 )
               })}
 
-            {!trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (
+            {!trimmedQuery && cronJobs.length > 0 && (
               <SidebarCronJobsSection
                 jobs={cronJobs}
                 label={s.cronJobs}

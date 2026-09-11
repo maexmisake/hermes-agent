@@ -5,7 +5,6 @@ import type { MutableRefObject } from 'react'
 import { useEffect, useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { NO_PROJECT_ID } from '@/app/chat/sidebar/projects/workspace-groups'
 import { resolveSessionRpcOwner } from '@/app/contrib/wiring-routing'
 import { $terminalTakeover, setTerminalTakeover } from '@/app/right-sidebar/store'
 import { noteActiveTreeGroup, revealTreePane } from '@/components/pane-shell/tree/store'
@@ -25,7 +24,7 @@ import { clearSessionDraft, stashSessionDraft, takeSessionDraft } from '@/store/
 import { requestGatewayForAgent, requestGatewayForProfile } from '@/store/gateway'
 import { $pinnedSessionIds } from '@/store/layout'
 import { $activeGatewayProfile, $newChatProfile, $newChatRoute, $profiles, ensureGatewayProfile } from '@/store/profile'
-import { $projectScope, $projectTree, ALL_PROJECTS } from '@/store/projects'
+import { $activeProjectId, $projectTree } from '@/store/projects'
 import {
   $activeSessionId,
   $activeSessionStoredIdRotation,
@@ -728,7 +727,7 @@ describe('createBackendSessionForSend profile routing', () => {
     $newChatProfile.set(null)
     $newChatRoute.set(null)
     $activeGatewayProfile.set('default')
-    $projectScope.set(ALL_PROJECTS)
+    $activeProjectId.set(null)
     $projectTree.set([])
     $currentCwd.set('')
     $currentFastMode.set(false)
@@ -936,7 +935,12 @@ describe('createBackendSessionForSend profile routing', () => {
     })
   })
 
-  it('falls back to the entered project cwd when the current cwd is blank', async () => {
+  it('never inherits the folder of the project the sidebar happens to be showing', async () => {
+    // A new chat used to pick up the cwd of whichever project was "entered" in
+    // the sidebar, so merely opening a folder to look at it decided where the
+    // next conversation would run. Opening a project is looking, not choosing:
+    // with nothing chosen and no live cwd, the chat starts detached and the
+    // folder is picked deliberately in the composer's setup row.
     const params = await createWith(() => {
       $projectTree.set([
         {
@@ -947,11 +951,11 @@ describe('createBackendSessionForSend profile routing', () => {
           sessionCount: 0
         }
       ])
-      $projectScope.set('p_app')
+      $activeProjectId.set('p_app')
       $currentCwd.set('')
     })
 
-    expect(params).toMatchObject({ cwd: '/repo/app' })
+    expect(params).not.toHaveProperty('cwd')
   })
 })
 
@@ -4042,7 +4046,7 @@ describe('createBackendSessionForSend workspace target', () => {
     cleanup()
     $newChatProfile.set(null)
     $activeGatewayProfile.set('default')
-    $projectScope.set(ALL_PROJECTS)
+    $activeProjectId.set(null)
     setCurrentCwd('')
     setNewChatWorkspaceTarget(undefined)
     vi.restoreAllMocks()
@@ -4077,32 +4081,38 @@ describe('createBackendSessionForSend workspace target', () => {
     expect(params).toMatchObject({ cwd: '/clicked-workspace' })
   })
 
-  it('does not inherit a stale cwd when Home is the active project scope', async () => {
+  it('starts detached from the folder the previous chat left behind (#84220)', async () => {
+    // The stale live path used to ride into the next chat, and the sidebar was
+    // the only thing that stopped it — a chat started while "Home" was the
+    // entered scope sent detached, one started anywhere else inherited. The
+    // sidebar no longer decides this: having a project open is looking at it,
+    // not choosing it. A fresh draft with nothing picked clears the path itself,
+    // so the send carries no cwd whatever the sidebar is showing.
     const params = await createWith(
       () => {
-        $projectScope.set(NO_PROJECT_ID)
-      },
-      () => {
-        // Simulate the stale live path left by the previously selected project
-        // before the new draft is submitted.
+        $activeProjectId.set('p_voice')
         $currentCwd.set('/previous-project')
+      },
+      handle => {
+        handle.startFreshSessionDraft()
       }
     )
 
     expect(params).not.toHaveProperty('cwd')
+    expect($currentCwd.get()).toBe('')
   })
 })
 
 describe('openNewSessionTile workspace target', () => {
   afterEach(() => {
     cleanup()
-    $projectScope.set(ALL_PROJECTS)
+    $activeProjectId.set(null)
     $projectTree.set([])
     vi.restoreAllMocks()
   })
 
-  it('omits cwd for a Home tile even when project scope resolves to a repo', async () => {
-    $projectScope.set('p_voice')
+  it('omits cwd for a Home tile even when a project with a repo is the active one', async () => {
+    $activeProjectId.set('p_voice')
     $projectTree.set([
       {
         id: 'p_voice',

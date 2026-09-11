@@ -29,14 +29,14 @@ export const SIDEBAR_SESSIONS_PAGE_SIZE = 50
 export const SIDEBAR_FILTERED_PAGE_SIZE = 300
 
 const SIDEBAR_PINNED_STORAGE_KEY = 'hermes.desktop.pinnedSessions'
-const SIDEBAR_AGENTS_GROUPED_STORAGE_KEY = 'hermes.desktop.agentsGroupedByWorkspace'
 const SIDEBAR_CRON_OPEN_STORAGE_KEY = 'hermes.desktop.sidebarCronOpen'
+const SIDEBAR_PROJECTS_OPEN_STORAGE_KEY = 'hermes.desktop.sidebarProjectsOpen'
+const SIDEBAR_GROUPS_OPEN_STORAGE_KEY = 'hermes.desktop.sidebarGroupsOpen'
 const SIDEBAR_MESSAGING_OPEN_STORAGE_KEY = 'hermes.desktop.sidebarMessagingOpen'
 const SIDEBAR_SESSION_ORDER_STORAGE_KEY = 'hermes.desktop.sessionOrder'
 const SIDEBAR_SESSION_ORDER_MANUAL_STORAGE_KEY = 'hermes.desktop.sessionOrder.manual'
 const SIDEBAR_GROUPING_STORAGE_KEY = 'hermes.desktop.sidebarGrouping'
 const SIDEBAR_ALL_PROFILES_GROUPING_STORAGE_KEY = 'hermes.desktop.sidebarGrouping.allProfiles'
-const SIDEBAR_ALL_PROFILES_AGENTS_GROUPED_STORAGE_KEY = 'hermes.desktop.sidebarAgentsGrouped.allProfiles'
 const SIDEBAR_SORT_KEY_STORAGE_KEY = 'hermes.desktop.sidebarSortKey'
 const SIDEBAR_ROW_META_STORAGE_KEY = 'hermes.desktop.sidebarRowMeta'
 const SIDEBAR_CARD_ROWS_STORAGE_KEY = 'hermes.desktop.sidebarCardRows'
@@ -216,6 +216,12 @@ export const $sidebarRecentsOpen = atom(true)
 // default (it only renders at all when cron sessions exist) so the
 // scheduler's `[IMPORTANT: …]` first-message previews don't spam recents.
 export const $sidebarCronOpen = persistentAtom(SIDEBAR_CRON_OPEN_STORAGE_KEY, false, Codecs.bool)
+
+/** The Projects / Groups section headers. Persisted, unlike Pinned and Sessions:
+ *  folding a whole tier away is a layout choice about how you work, so it should
+ *  survive a reload rather than reappear every launch. */
+export const $sidebarProjectsOpen = persistentAtom(SIDEBAR_PROJECTS_OPEN_STORAGE_KEY, true, Codecs.bool)
+export const $sidebarGroupsOpen = persistentAtom(SIDEBAR_GROUPS_OPEN_STORAGE_KEY, true, Codecs.bool)
 // Messaging platform sections collapse by default (they can be numerous and
 // tall). We persist the ids the user has *explicitly expanded*, so the default
 // stays collapsed unless they've opened a platform before.
@@ -224,31 +230,10 @@ export const $sidebarMessagingOpenIds = persistentAtom(
   [] as string[],
   Codecs.stringArray
 )
-// The Project-grouping flag, per scope like the grouping atoms below it: one
-// global bool here meant picking Project inside a workspace also flipped the
-// all-profiles view into the project tree (and leaving it there wiped the
-// workspace's choice) — the "sidebar forgets my grouping every time I switch
-// workspaces" bug. The flat key keeps its historical name so an existing
-// choice survives the update.
-const $sidebarFlatAgentsGrouped = persistentAtom(SIDEBAR_AGENTS_GROUPED_STORAGE_KEY, false, Codecs.bool)
-
-const $sidebarAllProfilesAgentsGrouped = persistentAtom(
-  SIDEBAR_ALL_PROFILES_AGENTS_GROUPED_STORAGE_KEY,
-  false,
-  Codecs.bool
-)
-
-/** Whether the CURRENT scope shows the project tree (reads the scope's own
- *  flag, so each workspace and the all-profiles view remember it separately). */
-export const $sidebarAgentsGrouped: ReadableAtom<boolean> = computed(
-  [$showAllProfiles, $sidebarFlatAgentsGrouped, $sidebarAllProfilesAgentsGrouped],
-  (showAll, flat, allProfiles) => (showAll ? allProfiles : flat)
-)
-
 /** How the recents list is divided. `date` is the sidebar's long-standing
  *  default (Today / Yesterday / Last week dividers). `profile` only means
  *  anything while the sidebar is showing every profile at once. */
-export type SidebarGrouping = 'date' | 'profile' | 'project' | 'status'
+export type SidebarGrouping = 'date' | 'profile' | 'status'
 /** What ranks rows within whatever grouping is active. */
 export type SidebarOrdering = 'cost' | 'created' | 'manual' | 'status' | 'tokens' | 'updated'
 /** The sort keys the menu offers; `manual` is entered by dragging, not picked. */
@@ -276,10 +261,6 @@ const STATUS_FILTERS: readonly SessionStatusBucket[] = ['needs-input', 'working'
 const PR_FILTERS: readonly PullRequestBucket[] = ['open', 'draft', 'merged', 'closed', 'none']
 export const SIDEBAR_SORT_KEYS: readonly SidebarSortKey[] = ['updated', 'created', 'status', 'tokens', 'cost']
 
-// `project` deliberately does NOT live here. Entering a project from ⌘K, the
-// projects store, or a repo scan flips $sidebarAgentsGrouped directly, so that
-// atom stays the single authority for the project view and this one only holds
-// the grouping to fall back to when the user leaves it.
 const $sidebarFlatGrouping = persistentAtom<SidebarGrouping>(
   SIDEBAR_GROUPING_STORAGE_KEY,
   'date',
@@ -373,9 +354,11 @@ export const $sidebarPrFilter = persistentAtom<PullRequestBucket[]>(
   listOf(PR_FILTERS)
 )
 
+// How the FLAT session list is divided. Projects and groups are folders above it, not
+// a mode it can be switched into, so there is no 'project' value to compute here.
 export const $sidebarGrouping: ReadableAtom<SidebarGrouping> = computed(
-  [$sidebarAgentsGrouped, $sidebarFlatGrouping, $sidebarAllProfilesGrouping, $showAllProfiles],
-  (grouped, flat, allProfiles, showAll) => (grouped ? 'project' : showAll ? allProfiles : flat)
+  [$sidebarFlatGrouping, $sidebarAllProfilesGrouping, $showAllProfiles],
+  (flat, allProfiles, showAll) => (showAll ? allProfiles : flat)
 )
 
 // A hand-dragged order outranks any sort key — dragging IS how you pick manual,
@@ -605,17 +588,20 @@ export function setSidebarCronOpen(open: boolean) {
   $sidebarCronOpen.set(open)
 }
 
+export function setSidebarProjectsOpen(open: boolean) {
+  $sidebarProjectsOpen.set(open)
+}
+
+export function setSidebarGroupsOpen(open: boolean) {
+  $sidebarGroupsOpen.set(open)
+}
+
 export function toggleSidebarMessagingOpen(sourceId: string) {
   const current = $sidebarMessagingOpenIds.get()
 
   $sidebarMessagingOpenIds.set(
     current.includes(sourceId) ? current.filter(id => id !== sourceId) : [...current, sourceId]
   )
-}
-
-export function setSidebarAgentsGrouped(grouped: boolean) {
-  // Write the flag the current scope reads — see $sidebarAgentsGrouped.
-  ;($showAllProfiles.get() ? $sidebarAllProfilesAgentsGrouped : $sidebarFlatAgentsGrouped).set(grouped)
 }
 
 export function setSidebarGrouping(grouping: SidebarGrouping) {
@@ -625,15 +611,8 @@ export function setSidebarGrouping(grouping: SidebarGrouping) {
   // in when the click landed. (The flat scope's atom can't hold 'profile'.)
   if (grouping === 'profile') {
     setShowAllProfiles(true)
-    $sidebarAllProfilesAgentsGrouped.set(false)
     $sidebarAllProfilesGrouping.set(grouping)
 
-    return
-  }
-
-  setSidebarAgentsGrouped(grouping === 'project')
-
-  if (grouping === 'project') {
     return
   }
 
@@ -707,8 +686,6 @@ export function resetSidebarView() {
   // hand it back on the next flip.
   $sidebarFlatGrouping.set(SIDEBAR_DEFAULT_GROUPING)
   $sidebarAllProfilesGrouping.set(SIDEBAR_DEFAULT_GROUPING)
-  $sidebarFlatAgentsGrouped.set(false)
-  $sidebarAllProfilesAgentsGrouped.set(false)
   setSidebarOrdering(SIDEBAR_DEFAULT_ORDERING)
   $sidebarRowMeta.set(SIDEBAR_DEFAULT_ROW_META)
   $sidebarCardRows.set(false)

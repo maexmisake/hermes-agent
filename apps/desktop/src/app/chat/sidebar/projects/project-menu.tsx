@@ -24,7 +24,9 @@ import { cn } from '@/lib/utils'
 import { $panesFlipped, dismissAutoProject } from '@/store/layout'
 import {
   copyPath,
+  deleteGroup,
   deleteProject,
+  openGroupRename,
   openProjectAddFolder,
   openProjectRename,
   revealPath,
@@ -54,6 +56,12 @@ function useProjectActions({
 }) {
   const { t } = useI18n()
   const p = t.sidebar.projects
+  const g = t.sidebar.groups
+  // A group has no folder, so the path verbs and everything that needs a materialized
+  // workspace (add folder, set active) have nothing to act on. Rename and delete are
+  // the whole surface — deleting one is safe by construction: its chats keep their
+  // rows and fall back to project placement.
+  const isGroup = Boolean(project.isGroup)
   const target = { id: project.id, name: project.label }
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
@@ -66,7 +74,7 @@ function useProjectActions({
   }
 
   const confirmDelete = async () => {
-    await deleteProject(project.id)
+    await (isGroup ? deleteGroup(project.id) : deleteProject(project.id))
 
     if (scoped) {
       onExitScope?.()
@@ -76,7 +84,9 @@ function useProjectActions({
   // Rename / add folder / set active — explicit projects only (auto ones lack a
   // materialized record). Appearance is handled per-surface (popover vs submenu)
   // by the caller since its picker chrome differs.
-  const identityItems: ActionItemSpec[] = project.isAuto
+  const identityItems: ActionItemSpec[] = isGroup
+    ? [{ icon: 'edit', key: 'rename', label: g.rename, onSelect: () => openGroupRename(target) }]
+    : project.isAuto
     ? []
     : [
         { icon: 'edit', key: 'rename', label: p.menuRename, onSelect: () => openProjectRename(target) },
@@ -95,7 +105,9 @@ function useProjectActions({
         }
       ]
 
-  const pathItems: ActionItemSpec[] = [
+  const pathItems: ActionItemSpec[] = isGroup
+    ? []
+    : [
     {
       disabled: !project.path,
       icon: 'folder-opened',
@@ -112,7 +124,15 @@ function useProjectActions({
     }
   ]
 
-  const dangerItem: ActionItemSpec = project.isAuto
+  const dangerItem: ActionItemSpec = isGroup
+    ? {
+        icon: 'trash',
+        key: 'delete',
+        label: `${g.delete}…`,
+        onSelect: () => setConfirmDeleteOpen(true),
+        variant: 'destructive'
+      }
+    : project.isAuto
     ? { icon: 'trash', key: 'remove', label: p.removeFromSidebar, onSelect: removeAuto, variant: 'destructive' }
     : {
         icon: 'trash',
@@ -124,13 +144,13 @@ function useProjectActions({
 
   const confirmDialog = (
     <ConfirmDialog
-      confirmLabel={p.menuDelete}
-      description={p.deleteConfirm}
+      confirmLabel={isGroup ? g.delete : p.menuDelete}
+      description={isGroup ? g.deleteConfirm(project.label) : p.deleteConfirm}
       destructive
       onClose={() => setConfirmDeleteOpen(false)}
       onConfirm={confirmDelete}
       open={confirmDeleteOpen}
-      title={`${p.menuDelete} "${project.label}"?`}
+      title={isGroup ? `${g.delete} "${project.label}"?` : `${p.menuDelete} "${project.label}"?`}
     />
   )
 
@@ -230,7 +250,12 @@ export function ProjectMenu({
           onCloseAutoFocus={event => event.preventDefault()}
           sideOffset={6}
         >
-          {project.isAuto ? (
+          {project.isGroup ? (
+            <>
+              {identityItems.map(item => renderActionItem(DROPDOWN_KIT, item))}
+              <DropdownMenuSeparator />
+            </>
+          ) : project.isAuto ? (
             // Inherited (auto) repos can still be themed — the change adopts the
             // repo as a real project. Rename / add-folder / set-active stay out
             // until then (they need the materialized record).

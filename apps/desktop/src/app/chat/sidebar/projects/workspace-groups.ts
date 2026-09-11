@@ -452,6 +452,26 @@ export function sessionBucketId(session: SessionInfo, explicitProjects: ProjectI
 }
 
 /**
+ * The sidebar FOLDER a row belongs to: its group when it has a live one, else its
+ * project bucket.
+ *
+ * A group outranks a project, mirroring `build_tree` — a grouped chat renders under its
+ * group (labelled with the project it came from), never in both places. `liveGroupIds`
+ * is what makes the precedence fail open: a `group_id` no live group claims is ignored,
+ * so deleting a group returns its chats to project placement instead of stranding them
+ * in a folder that no longer renders.
+ */
+export function sessionFolderId(
+  session: SessionInfo,
+  explicitProjects: ProjectInfo[],
+  liveGroupIds: ReadonlySet<string> = new Set()
+): null | string {
+  const group = (session.group_id || '').trim()
+
+  return group && liveGroupIds.has(group) ? group : sessionBucketId(session, explicitProjects)
+}
+
+/**
  * The ONE row-level project-filter rule the flat list and the project lanes
  * narrow by. Detached (cwd-less) rows belong to the Home bucket
  * (`NO_PROJECT_ID`, like the overview preview overlay) — filing them under
@@ -805,18 +825,21 @@ export function reconcileEnteredProjectSessions(
 }
 
 interface PreviewOverlayOptions {
+  /** Ids of the groups currently rendered, so a grouped row overlays into its group
+   *  rather than the project its cwd points at. Empty = project placement only. */
+  groupIds?: ReadonlySet<string>
   removed?: ReadonlySet<string>
   /** The active sort key as an id order; recency when empty. */
   rankIds?: string[]
 }
 
-/** Merge live sessions into per-project overview previews, keyed by project id. */
+/** Merge live sessions into per-folder rows, keyed by project or group id. */
 export function overlayLivePreviews(
   projects: SidebarProjectTree[],
   live: SessionInfo[],
   explicitProjects: ProjectInfo[],
   limit: number,
-  { removed = NO_REMOVED, rankIds }: PreviewOverlayOptions = {}
+  { groupIds, removed = NO_REMOVED, rankIds }: PreviewOverlayOptions = {}
 ): Record<string, SessionInfo[]> {
   const byProject = new Map<string, SessionInfo[]>()
 
@@ -825,7 +848,7 @@ export function overlayLivePreviews(
       continue
     }
 
-    const projectId = sessionBucketId(session, explicitProjects)
+    const projectId = sessionFolderId(session, explicitProjects, groupIds)
 
     if (!projectId) {
       continue
