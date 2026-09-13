@@ -78,6 +78,44 @@ test('ensureGitRepo: inits a plain dir with a root commit so worktrees branch', 
   }
 })
 
+test('ensureGitRepo: the seeded root commit never takes what is already staged', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-staged-'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
+
+  try {
+    execFileSync('git', ['init'], { cwd: dir })
+    fs.writeFileSync(path.join(dir, 'draft.txt'), 'not ready')
+    execFileSync('git', ['add', 'draft.txt'], { cwd: dir })
+
+    await ensureGitRepo('git', dir)
+
+    // One empty root commit; the staged file is still staged, not committed.
+    assert.equal(git('rev-list', '--count', 'HEAD'), '1')
+    assert.equal(git('ls-tree', '-r', '--name-only', 'HEAD'), '')
+    assert.equal(git('diff', '--cached', '--name-only'), 'draft.txt')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('ensureGitRepo: the root commit still lands when the repo requires signing and signing fails', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-signing-'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
+
+  try {
+    execFileSync('git', ['init'], { cwd: dir })
+    // Every commit must be signed, but the signing program can never run.
+    git('config', 'commit.gpgSign', 'true')
+    git('config', 'gpg.program', path.join(dir, 'missing-gpg'))
+
+    await ensureGitRepo('git', dir)
+
+    assert.equal(git('rev-list', '--count', 'HEAD'), '1')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('switchBranch: switches a normal checkout branch', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-switch-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()

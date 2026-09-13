@@ -175,11 +175,36 @@ async function defaultBranch(gitBin, cwd) {
   return ''
 }
 
+// `runGit`, with `input` written to git's stdin (`mktree` reads its listing there).
+function runGitWithInput(gitBin, args, cwd, input): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      gitBin,
+      args,
+      { cwd, windowsHide: true, timeout: 30_000, maxBuffer: 8 * 1024 * 1024 },
+      (err, stdout, stderr) => {
+        if (err) {
+          err.stderr = String(stderr || '')
+          reject(err)
+
+          return
+        }
+
+        resolve(String(stdout || ''))
+      }
+    )
+
+    child.stdin?.end(input)
+  })
+}
+
 // A brand-new project folder isn't a git repo — and a freshly-init'd one has no
 // commit to branch from — so `git worktree add` would fail. Make the dir a repo
 // with a root commit on the user's behalf so worktrees "just work". No-op for a
 // repo that already has commits; never touches the user's files (the seed commit
-// is `--allow-empty`), and never inits a dir that already lives inside a repo.
+// is an EMPTY tree, so anything already staged stays staged rather than being
+// committed under Hermes' name), and never inits a dir that already lives inside
+// a repo.
 async function ensureGitRepo(gitBin, dir) {
   let needsRoot = false
 
@@ -203,21 +228,33 @@ async function ensureGitRepo(gitBin, dir) {
   }
 
   if (needsRoot) {
-    // Inline identity so the seed commit lands even with no global git config.
-    await runGit(
-      gitBin,
-      [
-        '-c',
-        'user.email=hermes@localhost',
-        '-c',
-        'user.name=Hermes',
-        'commit',
-        '--allow-empty',
-        '-m',
-        'Initial commit'
-      ],
-      dir
-    )
+    // Built from the empty tree with plumbing rather than `git commit`, which
+    // would commit whatever the index holds. `mktree` with no input yields the
+    // empty tree in the repo's own hash format. Inline identity so the seed
+    // commit lands even with no global git config. `commit-tree` never reads
+    // commit.gpgSign (only `-S` signs), so a user's signing setup can't make
+    // this unattended commit fail.
+    const emptyTree = (await runGitWithInput(gitBin, ['mktree'], dir, '')).trim()
+
+    const rootCommit = (
+      await runGit(
+        gitBin,
+        [
+          '-c',
+          'user.email=hermes@localhost',
+          '-c',
+          'user.name=Hermes',
+          'commit-tree',
+          emptyTree,
+          '-m',
+          'Initial commit'
+        ],
+        dir
+      )
+    ).trim()
+
+    // HEAD is still the unborn branch's symbolic ref, so this creates that branch.
+    await runGit(gitBin, ['update-ref', 'HEAD', rootCommit], dir)
   }
 }
 
