@@ -4,6 +4,7 @@ import { useRef } from 'react'
 
 import { type NewSessionSplitHandler, startNewSessionDrag } from '@/app/chat/new-session-drag'
 import { Codicon } from '@/components/ui/codicon'
+import { FadeText } from '@/components/ui/fade-text'
 import { Tip } from '@/components/ui/tooltip'
 import type { SessionInfo } from '@/hermes'
 import { useI18n } from '@/i18n'
@@ -126,6 +127,12 @@ export function ProjectOverviewRow({
     <SidebarRowLead>{projectIcon(project)}</SidebarRowLead>
   )
 
+  // The label span is inline, so its `truncate` never clips: a long name runs
+  // through the caret and under the row's buttons until the sidebar list cuts it
+  // off at the row's edge. FadeText clips it in a block and fades it out before
+  // the caret.
+  const name = <FadeText fadeWidth="1rem">{project.label}</FadeText>
+
   const labelLink = (
     <SidebarRowLink
       // The glyph is aria-hidden and the tooltip only speaks on hover, so the
@@ -138,7 +145,7 @@ export function ProjectOverviewRow({
       labelClassName={cn('hover:text-foreground hover:underline', isActive && 'text-foreground')}
       onClick={() => onEnter?.(project.id)}
     >
-      {project.label}
+      {name}
     </SidebarRowLink>
   )
 
@@ -180,6 +187,7 @@ export function ProjectOverviewRow({
           )}
         </>
       }
+      actionsOnHover
       className={cn(dragging && 'cursor-grabbing bg-(--ui-sidebar-surface-background)')}
       data-glass-opaque={dragging ? '' : undefined}
       label={project.isAuto ? <Tip label={s.projects.autoDiscovered}>{labelLink}</Tip> : labelLink}
