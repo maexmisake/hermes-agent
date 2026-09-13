@@ -241,6 +241,12 @@ export interface SidebarGroupTotals {
   tokens: number
 }
 
+// Buttons that only show on hover take room only while they can be used: the
+// row is hovered, one of them has keyboard focus, or its menu is open. The rest
+// of the time their column is 0px wide.
+const HOVER_ONLY_ACTIONS =
+  'w-0 overflow-hidden focus-within:w-auto group-hover/workspace:w-auto has-[[data-state=open]]:w-auto'
+
 /**
  * Header for a group of sessions that hangs its rows underneath — a project, a
  * profile. Row-shaped rather than caption-shaped (that's {@link SidebarDateDivider},
@@ -250,6 +256,7 @@ export interface SidebarGroupTotals {
  */
 export function SidebarGroupRow({
   actions,
+  actionsOnHover = false,
   className,
   label,
   lead,
@@ -258,6 +265,12 @@ export function SidebarGroupRow({
   ...props
 }: React.ComponentProps<'div'> & {
   actions?: React.ReactNode
+  /**
+   * The actions only show on hover, so they take room only while the row is
+   * hovered, one of them has keyboard focus, or its menu is open. Ignored when
+   * the row shows totals (the actions overlay them).
+   */
+  actionsOnHover?: boolean
   label: React.ReactNode
   lead: React.ReactNode
   toggle?: { ariaLabel: string; onToggle: () => void; open: boolean }
@@ -291,6 +304,7 @@ export function SidebarGroupRow({
           actions
         )
       }
+      actionsClassName={actionsOnHover && !facts.length ? HOVER_ONLY_ACTIONS : undefined}
       className={cn('group/workspace', className)}
       {...props}
     >
