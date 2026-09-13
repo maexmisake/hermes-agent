@@ -27,7 +27,7 @@ import { searchSessions, type SessionInfo, type SessionSearchResult } from '@/he
 import { useI18n } from '@/i18n'
 import { comboTokens } from '@/lib/keybinds/combo'
 import { sessionMatchesSearch } from '@/lib/session-search'
-import { normalizeSessionSource, sessionSourceLabel } from '@/lib/session-source'
+import { isMessagingSource, normalizeSessionSource, sessionSourceLabel } from '@/lib/session-source'
 import { cn } from '@/lib/utils'
 import { $activeConnectionId } from '@/store/connections'
 import { $cronJobs } from '@/store/cron'
@@ -615,7 +615,12 @@ export function ChatSidebar({
   // anything the active filters exclude, so filtering works the same whether
   // you're looking at the flat list or the lanes.
   const isHiddenFromProjects = useCallback(
-    (session: SessionInfo) => isPinnedSession(session) || (filtersNarrow && !sessionMatchesFilters(session)),
+    (session: SessionInfo) =>
+      isPinnedSession(session) ||
+      // Telegram, Discord and other messaging chats have their own sections, so a
+      // project folder never shows them a second time.
+      isMessagingSource(session.source) ||
+      (filtersNarrow && !sessionMatchesFilters(session)),
     [isPinnedSession, filtersNarrow, sessionMatchesFilters]
   )
 
@@ -1266,9 +1271,16 @@ export function ChatSidebar({
   const showSessionSkeletons = sessionsLoading && scopedSessions.length === 0
 
   // Filtered down to nothing still renders the section: the empty state is what
-  // tells you the filter — not an empty account — is why the list is bare.
+  // tells you the filter — not an empty account — is why the list is bare. A
+  // profile whose only chats are messaging threads or scheduled runs still gets
+  // those sections instead of the blank state (#77816).
   const showSessionSections =
-    showSessionSkeletons || filtersActive || sortedSessions.length > 0 || projectModel.length > 0
+    showSessionSkeletons ||
+    filtersActive ||
+    sortedSessions.length > 0 ||
+    projectModel.length > 0 ||
+    messagingGroups.length > 0 ||
+    cronJobs.length > 0
 
   // The sidebar's session-area mode — exposed as data-attributes so custom
   // skins can target project mode, archived, or search without relying on
@@ -1667,7 +1679,6 @@ export function ChatSidebar({
             )}
 
             {!trimmedQuery &&
-              !worktreeGroupingActive &&
               messagingGroups.map(group => {
                 const visible = messagingVisible[group.sourceId] ?? NON_SESSION_INITIAL_ROWS
                 const shownSessions = group.sessions.slice(0, visible)
@@ -1712,7 +1723,7 @@ export function ChatSidebar({
                 )
               })}
 
-            {!trimmedQuery && !worktreeGroupingActive && cronJobs.length > 0 && (
+            {!trimmedQuery && cronJobs.length > 0 && (
               <SidebarCronJobsSection
                 jobs={cronJobs}
                 label={s.cronJobs}
