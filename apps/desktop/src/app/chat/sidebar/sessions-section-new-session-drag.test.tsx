@@ -244,43 +244,6 @@ describe('project-associated new-session drag sources', () => {
     )
   })
 
-  it('drags from an entered-project repo + with that repo cwd', () => {
-    const onNewSessionSplit = vi.fn()
-
-    const repoA = {
-      groups: [group({ id: '/repo/a::main', isMain: true, label: 'main', path: '/repo/a' })],
-      id: '/repo/a',
-      label: 'Repo A',
-      path: '/repo/a',
-      sessionCount: 1
-    }
-
-    const repoB = {
-      groups: [group({ id: '/repo/b::main', isMain: true, label: 'main', path: '/repo/b' })],
-      id: '/repo/b',
-      label: 'Repo B',
-      path: '/repo/b',
-      sessionCount: 1
-    }
-
-    render(
-      <SidebarSessionsSection
-        {...baseProps()}
-        onNewSessionSplit={onNewSessionSplit}
-        projectContent={project({ repos: [repoA, repoB], sessionCount: 1 })}
-      />
-    )
-
-    fireEvent.pointerDown(screen.getByRole('button', { name: 'New session in Repo A' }), { button: 0 })
-    commitLatestDrag()
-
-    expect(onNewSessionSplit).toHaveBeenCalledWith('right', {
-      anchor: 'workspace',
-      before: 'session-tile:next',
-      cwd: '/repo/a'
-    })
-  })
-
   it('drags profile-group add buttons to start a session in that profile', async () => {
     const onNewSessionSplit = vi.fn()
 

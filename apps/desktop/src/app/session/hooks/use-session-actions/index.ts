@@ -35,7 +35,12 @@ import {
 } from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $pinnedSessionIds } from '@/store/layout'
-import { draftWorkspace, materializeNewChatBranch } from '@/store/new-session-setup'
+import {
+  $newChatProject,
+  draftWorkspace,
+  materializeNewChatBranch,
+  revealProjectInSidebar
+} from '@/store/new-session-setup'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import {
   $activeGatewayProfile,
@@ -551,9 +556,11 @@ export function useSessionActions({
       try {
         // The workspace the setup bubbles show: an explicit one-shot target (null →
         // detached, string → that folder) wins; otherwise the live cwd, then the
-        // project-aware default (resolveNewSessionCwd — a project's new session
-        // keeps its repo cwd). Home stays detached (#84220).
+        // configured default.
         const draftCwd = draftWorkspace($newChatWorkspaceTarget.get(), $currentCwd.get())
+
+        // Captured before the new-branch step below can move the draft on.
+        const setupProject = $newChatProject.get()
 
         // The EXACT owner for this create: an explicit agent route, else the
         // (registry source, profile) pair the draft was made on. Read ONCE at
@@ -687,6 +694,9 @@ export function useSessionActions({
           broadcastSessionsChanged()
         }
 
+        // The chat now lives under the project it was set up in: open that folder
+        // so the new row is visible rather than tucked inside a closed one.
+        revealProjectInSidebar(setupProject)
         setFreshDraftReady(false)
         setNewChatWorkspaceTarget(undefined)
         setActiveSessionId(created.session_id)

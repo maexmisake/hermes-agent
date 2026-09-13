@@ -1,6 +1,6 @@
 import { useStore } from '@nanostores/react'
 import type * as React from 'react'
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { type NewSessionSplitHandler, startNewSessionDrag } from '@/app/chat/new-session-drag'
 import { Codicon } from '@/components/ui/codicon'
@@ -9,22 +9,20 @@ import { Tip } from '@/components/ui/tooltip'
 import type { SessionInfo } from '@/hermes'
 import { useI18n } from '@/i18n'
 import { cn } from '@/lib/utils'
-import { $sidebarShowAllSessions } from '@/store/layout'
+import { $sidebarProjectReveal } from '@/store/layout'
 
 import {
   SIDEBAR_LEAD_ICON_SIZE,
   SidebarGroupRow,
-  SidebarRowBody,
   SidebarRowGrab,
   SidebarRowLabel,
   SidebarRowLead,
   SidebarRowLeadGlyph,
   SidebarRowLink,
-  SidebarRowNest,
-  SidebarRowShell
+  SidebarRowNest
 } from '../chrome'
 
-import { latestProjectSessions, PROJECT_PREVIEW_COUNT, useWorkspaceNodeOpen } from './model'
+import { latestProjectSessions, useWorkspaceNodeOpen } from './model'
 import { ProjectContextMenu, ProjectMenu } from './project-menu'
 import type { SidebarProjectTree } from './workspace-groups'
 import { WorkspaceAddButton } from './workspace-header'
@@ -53,31 +51,15 @@ export function projectIcon({ color, icon, isAuto, isNoProject }: SidebarProject
   )
 }
 
-export function ProjectBackRow({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <SidebarRowShell>
-      <SidebarRowBody
-        className="group/back w-full text-(--ui-text-tertiary) opacity-40 hover:text-foreground"
-        onClick={onClick}
-      >
-        <SidebarRowLead>
-          <SidebarRowLeadGlyph>
-            <Codicon name="arrow-left" size={SIDEBAR_LEAD_ICON_SIZE} />
-          </SidebarRowLeadGlyph>
-        </SidebarRowLead>
-        <SidebarRowLabel className="text-xs underline-offset-4 group-hover/back:underline">{label}</SidebarRowLabel>
-      </SidebarRowBody>
-    </SidebarRowShell>
-  )
-}
-
 interface ProjectOverviewRowProps {
   project: SidebarProjectTree
-  onEnter?: (id: string) => void
   onNewSession?: (path: null | string) => void
   /** Drag the project's "+" onto a chat zone: create a new session pinned to
    *  this project's cwd, placed exactly where it's dropped. */
   onNewSessionSplit?: NewSessionSplitHandler
+  /** Opening the folder asks for the project's complete chat list. Set only when
+   *  the sidebar's tree may not hold every chat. */
+  onNeedAllSessions?: (id: string) => void
   renderRows?: (sessions: SessionInfo[]) => React.ReactNode
   activeProjectId?: null | string
   previewSessions?: SessionInfo[]
@@ -90,9 +72,9 @@ interface ProjectOverviewRowProps {
 
 export function ProjectOverviewRow({
   project,
-  onEnter,
   onNewSession,
   onNewSessionSplit,
+  onNeedAllSessions,
   renderRows,
   activeProjectId,
   previewSessions,
@@ -105,14 +87,29 @@ export function ProjectOverviewRow({
   const { t } = useI18n()
   const s = t.sidebar
   const isActive = project.id === activeProjectId
-  const [open, toggleOpen] = useWorkspaceNodeOpen(project.id)
+  // A project is a folder that opens in place, closed until opened, and an open
+  // one lists ALL its chats — there is no drill-in that hides the rest.
+  const [open, toggleOpen] = useWorkspaceNodeOpen(project.id, false)
   // The appearance popover anchors here (the full row) so it opens flush with
   // the sidebar's content edge regardless of which side the sidebar is on.
   const rowRef = useRef<HTMLDivElement>(null)
-  const showAllSessions = useStore($sidebarShowAllSessions)
-  const limit = showAllSessions ? Infinity : PROJECT_PREVIEW_COUNT
-  const fetched = (previewSessions ?? []).slice(0, limit)
-  const preview = renderRows ? (fetched.length ? fetched : latestProjectSessions(project, limit)) : []
+  const reveal = useStore($sidebarProjectReveal)
+  const fetched = previewSessions ?? []
+  const preview = renderRows ? (fetched.length ? fetched : latestProjectSessions(project, Infinity)) : []
+  const hasChats = preview.length > 0
+
+  // ⌘K "go to project" brings this row into view.
+  useEffect(() => {
+    if (reveal?.id === project.id) {
+      rowRef.current?.scrollIntoView?.({ block: 'nearest' })
+    }
+  }, [reveal, project.id])
+
+  useEffect(() => {
+    if (open && onNeedAllSessions) {
+      onNeedAllSessions(project.id)
+    }
+  }, [open, onNeedAllSessions, project.id])
 
   const lead = reorderable ? (
     <SidebarRowGrab
@@ -132,21 +129,27 @@ export function ProjectOverviewRow({
   // off at the row's edge. FadeText clips it in a block and fades it out before
   // the caret.
   const name = <FadeText fadeWidth="1rem">{project.label}</FadeText>
+  // The glyph is aria-hidden and the tooltip only speaks on hover, so the
+  // accessible name carries the auto-discovered cue itself.
+  const autoCue = project.isAuto ? ` (${s.projects.autoDiscovered})` : ''
 
-  const labelLink = (
+  // With chats, the name is the folder's one disclosure: it opens and closes the
+  // folder and says whether it is open. Without chats there is nothing to open,
+  // so the name is plain text.
+  const label = hasChats ? (
     <SidebarRowLink
-      // The glyph is aria-hidden and the tooltip only speaks on hover, so the
-      // link's own name carries the auto cue — screen readers get it too.
-      aria-label={
-        project.isAuto
-          ? `${s.projects.enter(project.label)} (${s.projects.autoDiscovered})`
-          : s.projects.enter(project.label)
-      }
+      aria-expanded={open}
+      aria-label={`${s.projects.toggle(project.label, !open)}${autoCue}`}
       labelClassName={cn('hover:text-foreground hover:underline', isActive && 'text-foreground')}
-      onClick={() => onEnter?.(project.id)}
+      onClick={toggleOpen}
     >
       {name}
     </SidebarRowLink>
+  ) : (
+    <SidebarRowLabel className={cn(isActive && 'text-foreground')}>
+      {name}
+      {autoCue && <span className="sr-only">{autoCue}</span>}
+    </SidebarRowLabel>
   )
 
   const shell = (
@@ -190,12 +193,12 @@ export function ProjectOverviewRow({
       actionsOnHover
       className={cn(dragging && 'cursor-grabbing bg-(--ui-sidebar-surface-background)')}
       data-glass-opaque={dragging ? '' : undefined}
-      label={project.isAuto ? <Tip label={s.projects.autoDiscovered}>{labelLink}</Tip> : labelLink}
+      label={project.isAuto ? <Tip label={s.projects.autoDiscovered}>{label}</Tip> : label}
       lead={lead}
       // The label is grab surface too, not just the lead's grabber — same
       // listeners, minus the controls that keep their own gestures. A project
-      // row has no rival drag (its title navigates on CLICK), so the sortable
-      // owns the press outright.
+      // row has no rival drag (its title opens the folder on CLICK), so the
+      // sortable owns the press outright.
       {...dragHandleProps}
       onPointerDown={event => {
         if ((event.target as HTMLElement).closest('[data-reorder-handle], [data-row-actions]')) {
@@ -206,8 +209,8 @@ export function ProjectOverviewRow({
       }}
       ref={rowRef}
       toggle={
-        preview.length > 0
-          ? { ariaLabel: s.projects.toggle(project.label, !open), onToggle: toggleOpen, open }
+        hasChats
+          ? { ariaLabel: s.projects.toggle(project.label, !open), labelToggles: true, onToggle: toggleOpen, open }
           : undefined
       }
       totals={{ costUsd: project.totalCostUsd ?? 0, tokens: project.totalTokens ?? 0 }}
@@ -216,9 +219,7 @@ export function ProjectOverviewRow({
 
   return (
     // Tag each project sibling with its id so a custom skin can target one
-    // project in the overview — the parallel to the entered-project wrapper's
-    // `data-sessions-project` (index.tsx), which only fires once you've drilled
-    // in. Here it's present on every row of the list.
+    // project in the overview. Present on every row of the list.
     <div className={cn(dragging && 'relative z-10')} data-sessions-project={project.id} ref={ref} style={style}>
       {/* Home has no per-project actions, so it gets no right-click menu. */}
       {project.isNoProject ? (
@@ -228,7 +229,7 @@ export function ProjectOverviewRow({
           {shell}
         </ProjectContextMenu>
       )}
-      {open && preview.length > 0 && <SidebarRowNest>{renderRows?.(preview)}</SidebarRowNest>}
+      {open && hasChats && <SidebarRowNest>{renderRows?.(preview)}</SidebarRowNest>}
     </div>
   )
 }

@@ -1,10 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { NO_PROJECT_ID } from '@/app/chat/sidebar/projects/workspace-groups'
 import type { ProjectInfo, SessionInfo } from '@/hermes'
 import type * as CodingStatusStore from '@/store/coding-status'
 import { $showAllProfiles } from '@/store/profile'
-import { $projects, $projectScope, $projectTree, ALL_PROJECTS } from '@/store/projects'
+import { $projects } from '@/store/projects'
 import type * as ProjectsStore from '@/store/projects'
 import { $sessions, setCurrentCwdTransient, setNewChatWorkspaceTarget } from '@/store/session'
 
@@ -82,8 +81,6 @@ beforeEach(() => {
   git.isGitRepoPath.mockResolvedValue(false)
   git.listRepoBranches.mockResolvedValue([])
   $projects.set([])
-  $projectScope.set(ALL_PROJECTS)
-  $projectTree.set([])
   $sessions.set([])
   $showAllProfiles.set(false)
   // A fresh draft: every earlier pick belongs to the draft before it.
@@ -146,36 +143,6 @@ describe('the workspace the chat will start in', () => {
     setCurrentCwdTransient('/ws/pets')
 
     expect($newChatWorkspace.get()).toBe('')
-  })
-
-  it('stays detached in Home, where a live folder left by the project viewed before never leaks in', () => {
-    $projects.set([project('pets', ['/ws/pets'])])
-    $projectScope.set(NO_PROJECT_ID)
-    setCurrentCwdTransient('/ws/pets')
-
-    expect($newChatWorkspace.get()).toBe('')
-    expect($newChatProject.get()).toBeNull()
-
-    // A folder picked in the bubbles still wins.
-    setNewChatWorkspace('/ws/pets', 'pets')
-
-    expect($newChatWorkspace.get()).toBe('/ws/pets')
-    expect($newChatProject.get()?.id).toBe('pets')
-  })
-
-  it('falls back to the entered project root when no folder is live', () => {
-    $projectTree.set([
-      {
-        id: 'p_app',
-        label: 'App',
-        path: '/repo/app',
-        repos: [{ groups: [], id: '/repo/app', label: 'app', path: '/repo/app', sessionCount: 0 }],
-        sessionCount: 0
-      }
-    ])
-    $projectScope.set('p_app')
-
-    expect($newChatWorkspace.get()).toBe('/repo/app')
   })
 })
 

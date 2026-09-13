@@ -2121,19 +2121,16 @@ export const zhHant = defineLocale({
     cronJobs: '排程任務',
     groupAriaGrouped: '以單一清單顯示工作階段',
     groupAriaUngrouped: '依工作區分組工作階段',
-    showProjects: '顯示專案',
     showSessions: '顯示工作階段',
     groupTitleGrouped: '取消分組',
     groupTitleUngrouped: '依工作區分組',
     allPinned: '這裡的全部已釘選。取消釘選某個聊天即可在最近中顯示。',
     shiftClickHint: 'Shift + 點擊聊天以釘選 · 拖曳以重新排序',
     noWorkspace: '無工作區',
-    projectEmpty: '尚無工作階段',
     projectLoadFailed: '會話載入失敗',
     noSessions: '尚無工作階段',
     noFilterMatches: '沒有工作階段符合這些篩選條件',
     projects: {
-      showAllSessions: '顯示所有工作階段',
       sectionLabel: '專案',
       home: '主頁',
       autoDiscovered: '自動探索',
@@ -2195,8 +2192,7 @@ export const zhHant = defineLocale({
       removeWorktreeConfirm:
         '從 git 中移除（刪除工作樹目錄，但保留分支），或僅從側邊欄隱藏該軌道並將工作樹保留在磁碟上。',
       removeWorktreeDirty: '此工作樹有未提交的變更。強制移除（捨棄這些變更），或僅隱藏軌道並保留在磁碟上。',
-      forceRemove: '強制移除',
-      enter: label => `開啟 ${label}`
+      forceRemove: '強制移除'
     },
     newSessionIn: label => `在 ${label} 中新建工作階段`,
     showMoreIn: (count, label) => `在 ${label} 中再顯示 ${count} 個`,

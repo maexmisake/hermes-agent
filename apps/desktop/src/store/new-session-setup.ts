@@ -1,11 +1,11 @@
 import { atom, computed, type ReadableAtom } from 'nanostores'
 
-import { NO_PROJECT_ID } from '@/app/chat/sidebar/projects/workspace-groups'
 import type { ProjectInfo, SessionInfo } from '@/hermes'
 import { translateNow } from '@/i18n'
 import { cleanPath, comparisonPath, isUnderPath } from '@/lib/path-compare'
 import { isMessagingSource, normalizeSessionSource } from '@/lib/session-source'
 import { isGitRepoPath, repoStatusForCwd } from '@/store/coding-status'
+import { setWorkspaceNodeOpen } from '@/store/layout'
 import {
   $activeGatewayProfile,
   $newChatProfile,
@@ -17,8 +17,6 @@ import {
 import {
   $projectDialog,
   $projects,
-  $projectScope,
-  $projectTree,
   addProjectFolder,
   listProjectsForProfile,
   listRepoBranches,
@@ -110,20 +108,11 @@ export function draftWorkspace(target: NewChatWorkspaceTarget, liveCwd: string):
     return target.trim()
   }
 
-  // Home is an explicit detached scope: a live folder left by the project viewed
-  // before never leaks in (#84220).
-  if ($projectScope.get() === NO_PROJECT_ID) {
-    return ''
-  }
-
   return liveCwd.trim() || resolveNewSessionCwd()
 }
 
 /** The bubbles show what Send will use, so they never promise a workspace the chat will not get. */
-export const $newChatWorkspace: ReadableAtom<string> = computed(
-  [$newChatWorkspaceTarget, $currentCwd, $projectScope, $projectTree],
-  (target, liveCwd) => draftWorkspace(target, liveCwd)
-)
+export const $newChatWorkspace: ReadableAtom<string> = computed([$newChatWorkspaceTarget, $currentCwd], draftWorkspace)
 
 /** The profile the new chat is created in: the draft's own route, else the profile picked for it, else the live gateway's. */
 export const $newChatProfileKey: ReadableAtom<string> = computed(
@@ -542,4 +531,11 @@ export async function materializeNewChatBranch(cwd: string, message = ''): Promi
   }
 
   return next
+}
+
+/** After the first message lands, open the chat's project folder in the sidebar so the chat is visible there. */
+export function revealProjectInSidebar(project: null | ProjectInfo): void {
+  if (project) {
+    setWorkspaceNodeOpen(project.id, true)
+  }
 }

@@ -31,7 +31,6 @@ import {
   $sidebarProfileFilter,
   $sidebarProjectFilter,
   $sidebarRowMeta,
-  $sidebarShowAllSessions,
   $sidebarShowArchived,
   $sidebarStatusFilter,
   $sidebarViewCustomized,
@@ -40,7 +39,6 @@ import {
   setSidebarCardRows,
   setSidebarGrouping,
   setSidebarOrdering,
-  setSidebarShowAllSessions,
   setSidebarShowArchived,
   setWorkspaceNodesOpen,
   type SidebarGrouping,
@@ -157,7 +155,6 @@ export function SidebarFilterMenu({ className }: { className?: string }) {
   const ordering = useStore($sidebarOrdering)
   const rowMeta = useStore($sidebarRowMeta)
   const cardRows = useStore($sidebarCardRows)
-  const showAllSessions = useStore($sidebarShowAllSessions)
   const statusFilter = useStore($sidebarStatusFilter)
   const projectFilter = useStore($sidebarProjectFilter)
   const profileFilter = useStore($sidebarProfileFilter)
@@ -179,8 +176,8 @@ export function SidebarFilterMenu({ className }: { className?: string }) {
   const prAvailable = Boolean(desktopGit()?.review?.prList)
 
   // Fold the level in view: project rows, or the date/status buckets. Project
-  // rows default open, so "all collapsed" means every one of them has been
-  // explicitly shut. Never sweeps Pinned or Cron.
+  // folders start closed and date/status buckets start open, so an id with no
+  // saved state counts as whatever its level starts as. Never sweeps Pinned or Cron.
   const foldIds =
     grouping === 'project'
       ? projects.map(project => project.id)
@@ -188,7 +185,8 @@ export function SidebarFilterMenu({ className }: { className?: string }) {
         ? listGroupIds
         : []
 
-  const foldCollapsed = foldIds.length > 0 && foldIds.every(id => nodeOpen[id] === false)
+  const foldStartsOpen = grouping !== 'project'
+  const foldCollapsed = foldIds.length > 0 && foldIds.every(id => !(nodeOpen[id] ?? foldStartsOpen))
 
   const groupings = GROUPINGS.map(option =>
     option.id === 'profile' ? { ...option, label: t.sidebar.gatewayGroups.grouping } : option
@@ -290,14 +288,6 @@ export function SidebarFilterMenu({ className }: { className?: string }) {
               ))}
             </DropdownMenuSubContent>
           </DropdownMenuSub>
-
-          {grouping === 'project' && (
-            <OptionCheckbox
-              checked={showAllSessions}
-              onCheck={() => setSidebarShowAllSessions(!showAllSessions)}
-              option={{ icon: 'list-unordered', id: 'all-sessions', label: t.sidebar.projects.showAllSessions }}
-            />
-          )}
 
           {/* A render variant, not a grouping: three-line cards (project · age /
               title / model · size) compose with whichever grouping is active. */}

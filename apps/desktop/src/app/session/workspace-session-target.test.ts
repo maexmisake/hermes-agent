@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { $activeGatewayProfile, $newChatProfile } from '@/store/profile'
-import { $projectScope, $projectTree, ALL_PROJECTS } from '@/store/projects'
+import { $projectTree } from '@/store/projects'
 import {
   $currentBranch,
   $currentCwd,
@@ -21,7 +21,6 @@ describe('startWorkspaceSession', () => {
     setCurrentBranch('')
     setCurrentCwd('')
     setNewChatWorkspaceTarget(undefined)
-    $projectScope.set(ALL_PROJECTS)
     $projectTree.set([])
     $activeGatewayProfile.set('default')
     $newChatProfile.set(null)
@@ -78,8 +77,7 @@ describe('startWorkspaceSession', () => {
     expect($currentBranch.get()).toBe('main')
   })
 
-  it('keeps a Home new-session request detached even when another project scope is active', () => {
-    $projectScope.set('p_voice')
+  it('keeps a Home new-session request detached even with a project tree loaded', () => {
     $projectTree.set([
       {
         id: 'p_voice',

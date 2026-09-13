@@ -273,7 +273,10 @@ export function SidebarGroupRow({
   actionsOnHover?: boolean
   label: React.ReactNode
   lead: React.ReactNode
-  toggle?: { ariaLabel: string; onToggle: () => void; open: boolean }
+  /** `labelToggles`: the label itself opens and closes the group and carries its
+   *  name, so the caret is a mouse affordance only and stays out of the
+   *  accessibility tree rather than repeating the same button. */
+  toggle?: { ariaLabel: string; labelToggles?: boolean; onToggle: () => void; open: boolean }
   totals?: SidebarGroupTotals
 }) {
   const rowMeta = useStore($sidebarRowMeta)
@@ -314,10 +317,13 @@ export function SidebarGroupRow({
         {toggle ? (
           <Tip label={toggle.ariaLabel}>
             <button
-              aria-label={toggle.ariaLabel}
+              aria-expanded={toggle.labelToggles ? undefined : toggle.open}
+              aria-hidden={toggle.labelToggles || undefined}
+              aria-label={toggle.labelToggles ? undefined : toggle.ariaLabel}
               className="flex flex-1 items-center self-stretch bg-transparent p-0"
               data-row-actions
               onClick={toggle.onToggle}
+              tabIndex={toggle.labelToggles ? -1 : undefined}
               type="button"
             >
               <DisclosureCaret
