@@ -208,11 +208,10 @@ export async function followActiveSessionCwd(cwd: string): Promise<void> {
   // Resolve only after the refresh, so a just-created/auto project is in the tree.
   const projectId = projectIdForCwd(target)
 
+  // Open the thread's project folder, so the moved chat is visible there when
+  // the sidebar is grouped by project. The grouping itself is the user's choice
+  // and is never switched for them (#105207).
   if (projectId) {
-    // The Projects tree only renders in grouped mode, so flip the sidebar into
-    // it, then open the thread's project folder so the moved chat is visible
-    // there.
-    setSidebarAgentsGrouped(true)
     openProjectInSidebar(projectId)
   }
 }
