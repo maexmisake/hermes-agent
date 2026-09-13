@@ -351,8 +351,21 @@ export function resolveNewChatOwnerRoute(forProfile?: string): AgentProfileRoute
 // resets to the intro draft, so we never strand the user in an orphaned view.
 export const $freshSessionRequest = atom(0)
 
-export function requestFreshSession(): void {
+// Whether the draft answering the latest request starts with no workspace (a new
+// chat from Home). Taken once, by that draft.
+let freshSessionDetached = false
+
+export function requestFreshSession(options?: { detached?: boolean }): void {
+  freshSessionDetached = Boolean(options?.detached)
   $freshSessionRequest.set($freshSessionRequest.get() + 1)
+}
+
+export function takeFreshSessionDetached(): boolean {
+  const detached = freshSessionDetached
+
+  freshSessionDetached = false
+
+  return detached
 }
 
 // Route profile-scoped REST settings (config/env/skills/tools/model/…) to the

@@ -116,7 +116,7 @@ export const projectRootCwd = (project: SidebarProjectTree | undefined): string 
 // With `newSession` (⌘-select / ⌘-Enter) it also lands on a fresh session draft
 // anchored at the project root — stacked as a tab when main already holds a
 // chat (palette opens are opens-from-nowhere). A path-less project (the Home
-// bucket) gets a plain detached draft.
+// bucket) gets a draft with no folder.
 export function goToProject(id: string, options?: { newSession?: boolean }): void {
   setSidebarAgentsGrouped(true)
   enterProject(id)
@@ -130,7 +130,7 @@ export function goToProject(id: string, options?: { newSession?: boolean }): voi
   if (cwd) {
     requestStartWorkSession(cwd, undefined, { openTab: true })
   } else {
-    requestFreshSession()
+    requestFreshSession({ detached: true })
   }
 }
 
