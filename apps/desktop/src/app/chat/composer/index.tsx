@@ -100,6 +100,7 @@ export function ChatBar({
   maxRecordingSeconds = 120,
   queueSessionKey,
   sessionId,
+  setupRow,
   state,
   onCancel,
   onAddUrl,
@@ -1226,6 +1227,9 @@ export function ChatBar({
               5px transparent grab margin — so both strips carry the same inset
               and share one left edge with it. */}
           <div className={cn(composerFloatingStrip, 'px-[5px] pb-1.5 empty:hidden')}>
+            {/* New-chat setup bubbles lead the strip: they say what this chat is
+                about to work on. Present only until the first message. */}
+            {setupRow}
             <ActionBadges sessionId={statusSessionId} />
             <SuggestionPills sessionId={statusSessionId} />
             <OnboardingSkip />

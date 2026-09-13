@@ -78,6 +78,45 @@ test('ensureGitRepo: inits a plain dir with a root commit so worktrees branch', 
   }
 })
 
+test('ensureGitRepo: the seeded root commit never takes what is already staged', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-staged-'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
+
+  try {
+    execFileSync('git', ['init'], { cwd: dir })
+    fs.writeFileSync(path.join(dir, 'draft.txt'), 'not ready')
+    execFileSync('git', ['add', 'draft.txt'], { cwd: dir })
+
+    await ensureGitRepo('git', dir)
+
+    // One empty root commit; the staged file is still staged, not committed.
+    assert.equal(git('rev-list', '--count', 'HEAD'), '1')
+    assert.equal(git('ls-tree', '-r', '--name-only', 'HEAD'), '')
+    assert.equal(git('diff', '--cached', '--name-only'), 'draft.txt')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('addWorktree: keeps .worktrees/ out of the main checkout status, written once', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-exclude-'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
+
+  try {
+    await ensureGitRepo('git', dir)
+    await addWorktree(dir, { branch: 'hermes/one', name: 'one' }, 'git')
+    await addWorktree(dir, { branch: 'hermes/two', name: 'two' }, 'git')
+
+    assert.equal(git('status', '--porcelain'), '')
+
+    const exclude = fs.readFileSync(path.join(dir, '.git', 'info', 'exclude'), 'utf8')
+
+    assert.equal(exclude.split(/\r?\n/).filter(line => line.trim() === '/.worktrees/').length, 1)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('switchBranch: switches a normal checkout branch', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-switch-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()

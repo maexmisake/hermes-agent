@@ -2466,19 +2466,16 @@ export const ru = defineLocale({
     cronJobs: 'Cron-задачи',
     groupAriaGrouped: 'Показать сеансы одним списком',
     groupAriaUngrouped: 'Сгруппировать сеансы по рабочим пространствам',
-    showProjects: 'Показать проекты',
     showSessions: 'Показать сеансы',
     groupTitleGrouped: 'Не группировать сеансы',
     groupTitleUngrouped: 'Группировать по рабочему пространству',
     allPinned: 'Здесь всё закреплено. Открепите чат, чтобы он появился в недавних.',
     shiftClickHint: 'Shift-клик по чату, чтобы закрепить',
     noWorkspace: 'Без рабочего пространства',
-    projectEmpty: 'Сеансов пока нет',
     projectLoadFailed: 'Не удалось загрузить сеансы',
     noSessions: 'Сеансов пока нет',
     noFilterMatches: 'Нет сеансов по этим фильтрам',
     projects: {
-      showAllSessions: 'Показать все сессии',
       sectionLabel: 'Проекты',
       home: 'Главная',
       newButton: 'Новый проект',
@@ -2548,10 +2545,8 @@ export const ru = defineLocale({
       removeWorktreeDirty:
         'В этом worktree есть незакоммиченные изменения. Удалить принудительно (сбросит эти изменения) или просто скрыть лану и оставить на диске.',
       forceRemove: 'Удалить принудительно',
-      enter: label => `Открыть ${label}`,
       reorder: label => `Изменить порядок ${label}`,
-      toggle: (label, open) => `${open ? 'Показать' : 'Скрыть'} сеансы ${label}`,
-      back: 'Все проекты'
+      toggle: (label, open) => `${open ? 'Показать' : 'Скрыть'} сеансы ${label}`
     },
     newSessionIn: label => `Новый сеанс в ${label}`,
     showMoreIn: (count, label) => `Показать ещё ${count} в ${label}`,
@@ -2775,6 +2770,26 @@ export const ru = defineLocale({
       prefix: 'Настроить это как запланированную задачу:',
       done: 'Отмечено для планирования',
       doneTip: 'Отправьте, и агент создаст задачу'
+    },
+    setup: {
+      projectTitle: 'Проект',
+      noProject: 'Без проекта',
+      newProject: 'Новый проект…',
+      projectFailed: 'Не удалось выбрать проект',
+      workspaceTitle: 'Рабочее пространство',
+      noWorkspace: 'Без рабочего пространства',
+      recentWorkspaces: 'Недавние рабочие пространства',
+      addWorkspace: 'Добавить рабочее пространство…',
+      browseWorkspace: 'Обзор…',
+      workspaceFailed: 'Не удалось выбрать рабочее пространство',
+      branchTitle: 'Ветка',
+      keepWorking: branch => `Продолжить работу в ${branch}`,
+      keepWorkingHint: 'Та же папка, новый чат',
+      newBranch: 'Новая ветка…',
+      newBranchLabel: 'Новая ветка',
+      newBranchHint: 'При отправке получит свою папку. Несохранённые изменения останутся здесь.',
+      startFrom: branch => `Начать с ${branch}`,
+      branchFailed: 'Не удалось создать ветку'
     },
     snippets: {
       codeReview: {

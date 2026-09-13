@@ -2242,19 +2242,16 @@ export interface Translations {
     cronJobs: string
     groupAriaGrouped: string
     groupAriaUngrouped: string
-    showProjects: string
     showSessions: string
     groupTitleGrouped: string
     groupTitleUngrouped: string
     allPinned: string
     shiftClickHint: string
     noWorkspace: string
-    projectEmpty: string
     projectLoadFailed: string
     noSessions: string
     noFilterMatches: string
     projects: {
-      showAllSessions: string
       sectionLabel: string
       home: string
       autoDiscovered: string
@@ -2321,10 +2318,8 @@ export interface Translations {
       removeWorktreeConfirm: string
       removeWorktreeDirty: string
       forceRemove: string
-      enter: (label: string) => string
       reorder: (label: string) => string
       toggle: (label: string, open: boolean) => string
-      back: string
     }
     newSessionIn: (label: string) => string
     showMoreIn: (count: number, label: string) => string
@@ -2524,6 +2519,27 @@ export interface Translations {
       prefix: string
       done: string
       doneTip: string
+    }
+    /** The new-chat setup bubbles above the composer (project / workspace / branch). */
+    setup: {
+      projectTitle: string
+      noProject: string
+      newProject: string
+      projectFailed: string
+      workspaceTitle: string
+      noWorkspace: string
+      recentWorkspaces: string
+      addWorkspace: string
+      browseWorkspace: string
+      workspaceFailed: string
+      branchTitle: string
+      keepWorking: (branch: string) => string
+      keepWorkingHint: string
+      newBranch: string
+      newBranchLabel: string
+      newBranchHint: string
+      startFrom: (branch: string) => string
+      branchFailed: string
     }
   }
 

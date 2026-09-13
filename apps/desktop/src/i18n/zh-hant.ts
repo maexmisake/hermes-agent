@@ -2121,19 +2121,16 @@ export const zhHant = defineLocale({
     cronJobs: '排程任務',
     groupAriaGrouped: '以單一清單顯示工作階段',
     groupAriaUngrouped: '依工作區分組工作階段',
-    showProjects: '顯示專案',
     showSessions: '顯示工作階段',
     groupTitleGrouped: '取消分組',
     groupTitleUngrouped: '依工作區分組',
     allPinned: '這裡的全部已釘選。取消釘選某個聊天即可在最近中顯示。',
     shiftClickHint: 'Shift + 點擊聊天以釘選 · 拖曳以重新排序',
     noWorkspace: '無工作區',
-    projectEmpty: '尚無工作階段',
     projectLoadFailed: '會話載入失敗',
     noSessions: '尚無工作階段',
     noFilterMatches: '沒有工作階段符合這些篩選條件',
     projects: {
-      showAllSessions: '顯示所有工作階段',
       sectionLabel: '專案',
       home: '主頁',
       autoDiscovered: '自動探索',
@@ -2195,8 +2192,7 @@ export const zhHant = defineLocale({
       removeWorktreeConfirm:
         '從 git 中移除（刪除工作樹目錄，但保留分支），或僅從側邊欄隱藏該軌道並將工作樹保留在磁碟上。',
       removeWorktreeDirty: '此工作樹有未提交的變更。強制移除（捨棄這些變更），或僅隱藏軌道並保留在磁碟上。',
-      forceRemove: '強制移除',
-      enter: label => `開啟 ${label}`
+      forceRemove: '強制移除'
     },
     newSessionIn: label => `在 ${label} 中新建工作階段`,
     showMoreIn: (count, label) => `在 ${label} 中再顯示 ${count} 個`,
@@ -2377,6 +2373,26 @@ export const zhHant = defineLocale({
     snippetsDesc: '選擇一個起始提示詞放入輸入框。',
     dropFiles: '拖曳檔案以附加',
     dropSession: '拖曳以連結此聊天',
+    setup: {
+      projectTitle: '專案',
+      noProject: '無專案',
+      newProject: '新增專案…',
+      projectFailed: '無法設定專案',
+      workspaceTitle: '工作區',
+      noWorkspace: '無工作區',
+      recentWorkspaces: '最近的工作區',
+      addWorkspace: '新增工作區…',
+      browseWorkspace: '瀏覽…',
+      workspaceFailed: '無法設定工作區',
+      branchTitle: '分支',
+      keepWorking: branch => `繼續在 ${branch} 上工作`,
+      keepWorkingHint: '同一資料夾，新對話',
+      newBranch: '新分支…',
+      newBranchLabel: '新分支',
+      newBranchHint: '傳送時建立獨立的資料夾，未儲存的變更會留在這裡。',
+      startFrom: branch => `從 ${branch} 開始`,
+      branchFailed: '無法建立分支'
+    },
     snippets: {
       codeReview: {
         label: '程式碼審查',

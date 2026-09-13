@@ -1,11 +1,7 @@
 import { atom } from 'nanostores'
 
 import type { NewSessionPlacement } from '@/app/chat/new-session-drag'
-import {
-  liveSessionProjectId,
-  NO_PROJECT_ID,
-  type SidebarProjectTree
-} from '@/app/chat/sidebar/projects/workspace-groups'
+import { liveSessionProjectId, type SidebarProjectTree } from '@/app/chat/sidebar/projects/workspace-groups'
 import type { HermesGitBaseBranch, HermesGitBranch } from '@/global'
 import { getHermesConfig, hermesApi, type HermesGateway } from '@/hermes'
 import { translateNow } from '@/i18n'
@@ -13,9 +9,13 @@ import { desktopDefaultCwd, isDesktopFsRemoteMode, selectDesktopPaths, writeDesk
 import { desktopGit } from '@/lib/desktop-git'
 import { isMissingRestEndpoint, isMissingRpcMethod } from '@/lib/gateway-rpc'
 import { isUnderPath } from '@/lib/path-compare'
-import { persistentAtom } from '@/lib/persisted'
 import { $gateway, activeGateway, ensureActiveGatewayOpen } from '@/store/gateway'
-import { $sidebarShowAllSessions, setSidebarAgentsGrouped } from '@/store/layout'
+import {
+  revealSidebarProject,
+  setSidebarAgentsGrouped,
+  setSidebarRecentsOpen,
+  setWorkspaceNodeOpen
+} from '@/store/layout'
 import { notify } from '@/store/notifications'
 import {
   $activeGatewayProfile,
@@ -70,27 +70,11 @@ function projectsStaleBackendError(): Error {
 // True while the disk scan is in flight (drives the "finding repos" hint).
 export const $reposScanning = atom(false)
 
-// ── Project scope (the "you're inside a project" view, mirroring profile scope)─
-// The sidebar's grouped view is a project switcher: ALL_PROJECTS shows the
-// project overview (a list you drill into), and a concrete id means you've
-// "entered" that project so only its worktrees/branches/sessions show. This is
-// pure view state (localStorage), distinct from the durable active-project
-// pointer in projects.db — though entering a project also makes it active so new
-// chats land there, exactly as selecting a profile does.
-export const ALL_PROJECTS = '__all_projects__'
-
-const PROJECT_SCOPE_KEY = 'hermes.desktop.projectScope'
-
-export const $projectScope = persistentAtom<string>(PROJECT_SCOPE_KEY, ALL_PROJECTS, {
-  decode: raw => raw || ALL_PROJECTS,
-  encode: value => value || ALL_PROJECTS
-})
-
-// Enter a project: scope the sidebar to it and make it the active project
-// (best-effort — the durable pointer is nice-to-have, the view scope is the
-// point). Never opens a session.
-export function enterProject(id: string): void {
-  $projectScope.set(id)
+// "Go to" a project: open its folder in place in the sidebar (never hiding the
+// other projects or chats) and make it the active project (best-effort — the
+// durable pointer is nice-to-have). Never opens a session.
+export function openProjectInSidebar(id: string): void {
+  setWorkspaceNodeOpen(id, true)
 
   // Only explicit, persisted projects (ids are `p_<hex>`) become active. Auto
   // projects (ids are filesystem paths) and the Home bucket have no durable row
@@ -100,10 +84,6 @@ export function enterProject(id: string): void {
   }
 }
 
-export function exitProjectScope(): void {
-  $projectScope.set(ALL_PROJECTS)
-}
-
 // A project's working root: its primary folder, else the first repo that has
 // one. Empty for the path-less Home bucket. (The sidebar's `projectTreeCwd` is
 // the same rule over the same tree — this is the store-side copy so the store
@@ -111,15 +91,17 @@ export function exitProjectScope(): void {
 export const projectRootCwd = (project: SidebarProjectTree | undefined): string =>
   (project?.path || project?.repos.find(repo => repo.path)?.path || '').trim()
 
-// ⌘K "go to project": flip the sidebar into grouped mode and enter the project
-// — a pure scope switch, same as clicking the overview row (never spends main).
-// With `newSession` (⌘-select / ⌘-Enter) it also lands on a fresh session draft
+// ⌘K "go to project": show the Projects section grouped by project, open the
+// project's folder in place and scroll it into view (never spends main). With
+// `newSession` (⌘-select / ⌘-Enter) it also lands on a fresh session draft
 // anchored at the project root — stacked as a tab when main already holds a
 // chat (palette opens are opens-from-nowhere). A path-less project (the Home
-// bucket) gets a plain detached draft.
+// bucket) gets a draft with no folder.
 export function goToProject(id: string, options?: { newSession?: boolean }): void {
   setSidebarAgentsGrouped(true)
-  enterProject(id)
+  setSidebarRecentsOpen(true)
+  openProjectInSidebar(id)
+  revealSidebarProject(id)
 
   if (!options?.newSession) {
     return
@@ -130,41 +112,17 @@ export function goToProject(id: string, options?: { newSession?: boolean }): voi
   if (cwd) {
     requestStartWorkSession(cwd, undefined, { openTab: true })
   } else {
-    requestFreshSession()
+    requestFreshSession({ detached: true })
   }
 }
 
-// The cwd a NEW chat should start in.
-//
-// Priority (first hit wins):
-//   1. Explicit sidebar project scope (drilled into a project / Home bucket)
-//   2. Configured default project dir (detached otherwise — in BOTH local and
-//      remote mode; a bare new chat never inherits the sticky remembered cwd,
-//      #57911 / #84220)
-//
-// The "active project" is just an atom ($projectScope) — so inside a project a
-// new session (cmd-n, the trunk "+") starts at that project's root (its primary
-// repo = the default-branch checkout). Outside one it does NOT inherit the chat
-// you were looking at: after a restart that's the just-resumed session, whose
-// stored cwd is often a home-dir fallback, so every new chat landed there
-// instead of the configured default (#71873, #80213, #77496).
+// The cwd a NEW chat should start in: the configured default project dir, else
+// detached — in BOTH local and remote mode. A bare new chat never inherits the
+// sticky remembered cwd (#57911 / #84220), nor the chat you were looking at:
+// after a restart that's the just-resumed session, whose stored cwd is often a
+// home-dir fallback (#71873, #80213, #77496). A project's own "+" and the
+// new-chat setup bubbles attach a folder explicitly.
 export function resolveNewSessionCwd(): string {
-  const scope = $projectScope.get()
-
-  // Inside Home, "no folder" is the point: a new chat must stay detached rather
-  // than silently attaching to the configured default dir and leaving Home.
-  if (scope === NO_PROJECT_ID) {
-    return ''
-  }
-
-  if (scope !== ALL_PROJECTS) {
-    const cwd = projectRootCwd($projectTree.get().find(node => node.id === scope))
-
-    if (cwd) {
-      return cwd
-    }
-  }
-
   return workspaceCwdForNewSession()
 }
 
@@ -250,15 +208,11 @@ export async function followActiveSessionCwd(cwd: string): Promise<void> {
   // Resolve only after the refresh, so a just-created/auto project is in the tree.
   const projectId = projectIdForCwd(target)
 
+  // Open the thread's project folder, so the moved chat is visible there when
+  // the sidebar is grouped by project. The grouping itself is the user's choice
+  // and is never switched for them (#105207).
   if (projectId) {
-    // The Projects tree only renders in grouped mode, so flip the sidebar into
-    // it — otherwise following from the flat Sessions list would change scope
-    // invisibly. Then drill into the thread's project.
-    setSidebarAgentsGrouped(true)
-
-    if (projectId !== $projectScope.get()) {
-      enterProject(projectId)
-    }
+    openProjectInSidebar(projectId)
   }
 }
 
@@ -373,15 +327,32 @@ export async function refreshProjects(): Promise<void> {
   }
 }
 
+/** One profile's projects, leaving the sidebar's cached list alone. The new-chat
+ *  bubbles use it in "All profiles" view, where that list is never loaded. Only
+ *  the profile the live gateway serves can answer; any other throws. */
+export async function listProjectsForProfile(profile: string): Promise<ProjectInfo[]> {
+  const context = await activeProjectsContext(normalizeProfileKey(profile))
+
+  const payload = await gatewayRequestOn<ProjectsPayload>(
+    context.gateway,
+    'projects.list',
+    projectParams({}, context.profile)
+  )
+
+  return payload.projects ?? []
+}
+
 interface ProjectTreePayload {
   projects: SidebarProjectTree[]
   active_id: null | string
   scoped_session_ids: string[]
 }
 
-// Expanded previews need the complete existing tree window before the renderer
-// finds its two recency groups. Keep the normal three-row payload unchanged.
-const projectTreePreviewLimit = () => ($sidebarShowAllSessions.get() ? 2000 : 3)
+// An open project folder lists ALL its chats (there is no drill-in to reach older
+// ones), so the tree carries every row it reads instead of a short preview. The
+// backend reads a window of this many chats per profile; a sidebar that sees the
+// window full fetches a project's complete list when its folder opens.
+export const PROJECT_TREE_PREVIEW_LIMIT = 2000
 // The all-profiles fan-out reads one database per profile, so it is allowed the
 // same headroom as the cross-profile session list rather than the interactive
 // default.
@@ -423,7 +394,7 @@ async function refreshProjectTreeOn(context: ActiveProjectsContext): Promise<voi
       res = await gatewayRequestOn<ProjectTreePayload>(
         gateway,
         'projects.tree',
-        projectParams({ preview_limit: projectTreePreviewLimit() }, profile)
+        projectParams({ preview_limit: PROJECT_TREE_PREVIEW_LIMIT }, profile)
       )
     } catch (error) {
       // A remote source switch can leave the first read RPC on a newly-opened
@@ -437,7 +408,7 @@ async function refreshProjectTreeOn(context: ActiveProjectsContext): Promise<voi
       res = await gatewayRequestOn<ProjectTreePayload>(
         gateway,
         'projects.tree',
-        projectParams({ preview_limit: projectTreePreviewLimit() }, profile)
+        projectParams({ preview_limit: PROJECT_TREE_PREVIEW_LIMIT }, profile)
       )
     }
 
@@ -485,7 +456,7 @@ async function refreshProjectTreeAcrossProfiles(): Promise<void> {
 
   try {
     const res = await hermesApi<ProjectTreePayload>({
-      path: `/api/profiles/projects/tree?preview_limit=${projectTreePreviewLimit()}`,
+      path: `/api/profiles/projects/tree?preview_limit=${PROJECT_TREE_PREVIEW_LIMIT}`,
       timeoutMs: PROJECT_TREE_REQUEST_TIMEOUT_MS
     })
 
@@ -1060,10 +1031,15 @@ export async function addProjectFolder(
     }
   }
 
+  // In "All profiles" view the folder goes to the live gateway's profile, the rule
+  // creating a project already follows.
   await persistOrRollback(snap, () =>
     gatewayRequest(
       'projects.add_folder',
-      projectParams({ id, path, label: opts.label, is_primary: opts.isPrimary ?? false })
+      projectParams(
+        { id, path, label: opts.label, is_primary: opts.isPrimary ?? false },
+        projectProfile() ?? normalizeProfileKey($activeGatewayProfile.get())
+      )
     )
   )
   reconcileProjects()
@@ -1394,7 +1370,7 @@ export async function openFolderAsProject(dir?: string): Promise<void> {
 
   if (existing) {
     setSidebarAgentsGrouped(true)
-    enterProject(existing)
+    openProjectInSidebar(existing)
   } else {
     const name =
       target
@@ -1406,7 +1382,7 @@ export async function openFolderAsProject(dir?: string): Promise<void> {
       const created = await createProject({ name, folders: [target], primaryPath: target, use: true })
 
       if (created) {
-        enterProject(created.id)
+        openProjectInSidebar(created.id)
       }
     } catch (err) {
       // Stale backend (no projects.* RPC) or a failed write: still open the

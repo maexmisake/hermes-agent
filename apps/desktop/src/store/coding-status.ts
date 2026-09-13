@@ -3,14 +3,7 @@ import { atom, computed, type ReadableAtom } from 'nanostores'
 import type { HermesGitWorktree, HermesRepoStatus } from '@/global'
 import { desktopGit } from '@/lib/desktop-git'
 
-import {
-  $projectScope,
-  $projectTree,
-  $worktreeDialog,
-  $worktreeRefreshToken,
-  ALL_PROJECTS,
-  projectRootCwd
-} from './projects'
+import { $worktreeDialog, $worktreeRefreshToken } from './projects'
 import {
   $busy,
   $currentCwd,
@@ -486,35 +479,19 @@ export function _resetCodingStatusForTests(): void {
 // both the project state and the git truth, and coding-status already depends
 // on projects. A dependency in the other direction is a cycle.
 
-// The repo that a new worktree is cut from: the cwd of the focused surface, or
-// the root of the project the user entered. Both are things the user points at.
-// There is no "use some other project's repo" step, because that branches
-// somewhere the user never selected.
+// The repo that a new worktree is cut from: the cwd of the focused surface, the
+// thing the user points at. There is no "use some other project's repo" step,
+// because that branches somewhere the user never selected.
 //
-// A project root is not always a repo, so existence alone is not proof. Each
-// candidate is validated against the probe cache. This function is the only
-// authority on the target, so the hotkey no longer tests `$repoStatus` first,
-// and ⌘⇧B now works from a detached session inside a project. '' means that no
-// repo is in reach. That is a no-op and not an error, because a worktree only
-// exists inside a repo.
+// A cwd is not always a repo, so it is validated against the probe cache. This
+// function is the only authority on the target, so the hotkey no longer tests
+// `$repoStatus` first. '' means that no repo is in reach. That is a no-op and
+// not an error, because a worktree only exists inside a repo.
 export async function resolveWorktreeRepoPath(): Promise<string> {
   const runtimeId = $focusedRuntimeId.get()
-  const scope = $projectScope.get()
+  const cwd = (runtimeId ? ($sessionStates.get()[runtimeId]?.cwd ?? '') : '').trim()
 
-  const candidates = [
-    runtimeId ? ($sessionStates.get()[runtimeId]?.cwd ?? '') : '',
-    scope === ALL_PROJECTS ? '' : projectRootCwd($projectTree.get().find(node => node.id === scope))
-  ]
-
-  for (const candidate of candidates) {
-    const path = candidate.trim()
-
-    if (path && (await isGitRepoPath(path))) {
-      return path
-    }
-  }
-
-  return ''
+  return cwd && (await isGitRepoPath(cwd)) ? cwd : ''
 }
 
 export async function openWorktreeDialog(options?: { base?: string; repoPath?: string }): Promise<void> {

@@ -1884,19 +1884,16 @@ export const ar = defineLocale({
     cronJobs: 'المهام المجدولة',
     groupAriaGrouped: 'الجلسات مجمعة حسب مساحة العمل',
     groupAriaUngrouped: 'الجلسات غير مجمعة',
-    showProjects: 'عرض المشاريع',
     showSessions: 'عرض الجلسات',
     groupTitleGrouped: 'مجمعة حسب مساحة العمل',
     groupTitleUngrouped: 'كل الجلسات',
     allPinned: 'كل الجلسات مثبتة',
     shiftClickHint: 'استخدم Shift للتحديد المتعدد',
     noWorkspace: 'بدون مساحة عمل',
-    projectEmpty: 'لا توجد جلسات بعد',
     projectLoadFailed: 'تعذر تحميل الجلسات',
     noSessions: 'لا توجد جلسات بعد',
     noFilterMatches: 'لا توجد جلسات تطابق عوامل التصفية هذه',
     projects: {
-      showAllSessions: 'عرض جميع الجلسات',
       sectionLabel: 'المشاريع',
       home: 'الرئيسية',
       autoDiscovered: 'مكتشف تلقائيًا',
@@ -1957,10 +1954,8 @@ export const ar = defineLocale({
       removeWorktreeDirty:
         'تحتوي شجرة العمل هذه على تغييرات غير مُودعة. أزِلها بالقوة (يتجاهل تلك التغييرات)، أو فقط أخفِ المسار واحتفظ بها على القرص.',
       forceRemove: 'إزالة بالقوة',
-      enter: label => `فتح ${label}`,
       reorder: label => `إعادة ترتيب ${label}`,
-      toggle: (label, open) => `${open ? 'إظهار' : 'إخفاء'} جلسات ${label}`,
-      back: 'كل المشاريع'
+      toggle: (label, open) => `${open ? 'إظهار' : 'إخفاء'} جلسات ${label}`
     },
     newSessionIn: label => `جلسة جديدة في ${label}`,
     showMoreIn: (count, label) => `إظهار ${count} أخرى في ${label}`,
@@ -2107,6 +2102,26 @@ export const ar = defineLocale({
     snippetsDesc: 'اختر موجّهًا أوليًا لإدراجه في المحرّر.',
     dropFiles: 'أفلت الملفات للإرفاق',
     dropSession: 'أفلت الجلسة للفتح',
+    setup: {
+      projectTitle: 'المشروع',
+      noProject: 'بلا مشروع',
+      newProject: 'مشروع جديد…',
+      projectFailed: 'تعذّر تعيين المشروع',
+      workspaceTitle: 'مساحة العمل',
+      noWorkspace: 'بلا مساحة عمل',
+      recentWorkspaces: 'مساحات العمل الأخيرة',
+      addWorkspace: 'إضافة مساحة عمل…',
+      browseWorkspace: 'استعراض…',
+      workspaceFailed: 'تعذّر تعيين مساحة العمل',
+      branchTitle: 'الفرع',
+      keepWorking: branch => `متابعة العمل على ${branch}`,
+      keepWorkingHint: 'المجلد نفسه، محادثة جديدة',
+      newBranch: 'فرع جديد…',
+      newBranchLabel: 'فرع جديد',
+      newBranchHint: 'يحصل على مجلده الخاص عند الإرسال. تبقى التغييرات غير المحفوظة هنا.',
+      startFrom: branch => `البدء من ${branch}`,
+      branchFailed: 'تعذّر إنشاء الفرع'
+    },
     snippets: {
       codeReview: {
         label: 'مراجعة الكود',

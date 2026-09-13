@@ -727,18 +727,38 @@ export function excludeProjectSessions(
   })
 
   const previewSessions = project.previewSessions?.filter(session => !isExcluded(session))
+  const previewsChanged = previewSessions?.length !== project.previewSessions?.length
 
-  changed ||= previewSessions?.length !== project.previewSessions?.length
-
-  if (!changed) {
+  if (!changed && !previewsChanged) {
     return project
   }
+
+  // In the overview the lanes are empty and the rows ride in `previewSessions`,
+  // so the backend's counts and totals still include the rows hidden here. Take
+  // out the ones the lanes did not already drop, so a project full of messaging
+  // threads neither counts nor totals them.
+  const inLanes = new Set(
+    project.repos.flatMap(repo => repo.groups.flatMap(group => group.sessions.map(session => session.id)))
+  )
+
+  const hiddenPreviews = (project.previewSessions ?? []).filter(
+    session => isExcluded(session) && !inLanes.has(session.id)
+  )
+
+  const hiddenTokens = hiddenPreviews.reduce((sum, session) => sum + session.input_tokens + session.output_tokens, 0)
+
+  const hiddenCost = hiddenPreviews.reduce(
+    (sum, session) => sum + (session.actual_cost_usd ?? session.estimated_cost_usd ?? 0),
+    0
+  )
 
   return {
     ...project,
     previewSessions,
     repos,
-    sessionCount: repos.reduce((n, repo) => n + repo.sessionCount, 0)
+    sessionCount: Math.max(0, repos.reduce((n, repo) => n + repo.sessionCount, 0) - hiddenPreviews.length),
+    totalCostUsd: project.totalCostUsd === undefined ? undefined : Math.max(0, project.totalCostUsd - hiddenCost),
+    totalTokens: project.totalTokens === undefined ? undefined : Math.max(0, project.totalTokens - hiddenTokens)
   }
 }
 

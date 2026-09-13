@@ -248,8 +248,15 @@ export interface SidebarGroupTotals {
  * with the session rows it heads. `toggle` omitted keeps the caret's space with
  * nothing to reveal.
  */
+// Buttons that only show on hover take room only while they show — on hover, on
+// keyboard focus, or with their menu open — so the label runs to the row's edge
+// the rest of the time instead of stopping short of invisible buttons.
+const HOVER_ONLY_ACTIONS =
+  'w-0 overflow-hidden focus-within:w-auto group-hover/workspace:w-auto has-[[data-state=open]]:w-auto'
+
 export function SidebarGroupRow({
   actions,
+  actionsOnHover = false,
   className,
   label,
   lead,
@@ -258,9 +265,14 @@ export function SidebarGroupRow({
   ...props
 }: React.ComponentProps<'div'> & {
   actions?: React.ReactNode
+  /** The actions are hover-revealed, so they make room for themselves only while shown. */
+  actionsOnHover?: boolean
   label: React.ReactNode
   lead: React.ReactNode
-  toggle?: { ariaLabel: string; onToggle: () => void; open: boolean }
+  /** `labelToggles`: the label itself opens and closes the group and carries its
+   *  name, so the caret is a mouse affordance only and stays out of the
+   *  accessibility tree rather than repeating the same button. */
+  toggle?: { ariaLabel: string; labelToggles?: boolean; onToggle: () => void; open: boolean }
   totals?: SidebarGroupTotals
 }) {
   const rowMeta = useStore($sidebarRowMeta)
@@ -291,6 +303,7 @@ export function SidebarGroupRow({
           actions
         )
       }
+      actionsClassName={actionsOnHover && !facts.length ? HOVER_ONLY_ACTIONS : undefined}
       className={cn('group/workspace', className)}
       {...props}
     >
@@ -300,10 +313,13 @@ export function SidebarGroupRow({
         {toggle ? (
           <Tip label={toggle.ariaLabel}>
             <button
-              aria-label={toggle.ariaLabel}
+              aria-expanded={toggle.labelToggles ? undefined : toggle.open}
+              aria-hidden={toggle.labelToggles || undefined}
+              aria-label={toggle.labelToggles ? undefined : toggle.ariaLabel}
               className="flex flex-1 items-center self-stretch bg-transparent p-0"
               data-row-actions
               onClick={toggle.onToggle}
+              tabIndex={toggle.labelToggles ? -1 : undefined}
               type="button"
             >
               <DisclosureCaret

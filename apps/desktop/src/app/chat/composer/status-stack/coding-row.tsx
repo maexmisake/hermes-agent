@@ -2,6 +2,7 @@ import { useStore } from '@nanostores/react'
 import { memo, useEffect } from 'react'
 
 import { PrTag } from '@/app/chat/pr-tag'
+import { pickRevealLabel } from '@/app/right-sidebar/file-actions'
 import { StatusRow } from '@/components/chat/status-row'
 import {
   type ActionItemSpec,
@@ -19,6 +20,7 @@ import { useI18n } from '@/i18n'
 import { displayPath } from '@/lib/display-path'
 import { openWorktreeDialog, registerRepoStatusCwd, repoStatusForCwd, repoWorktreesForCwd } from '@/store/coding-status'
 import { notifyError } from '@/store/notifications'
+import { $projectTree, projectNameForCwd, revealPath } from '@/store/projects'
 import { $pullRequestsByBranch, branchPrKey, refreshPullRequests } from '@/store/pull-requests'
 
 // Tiny uppercase section header, matching the composer "+" menu's labels.
@@ -73,6 +75,11 @@ export const CodingStatusRow = memo(function CodingStatusRow({
   // which is blank in exactly the same case) and cost a wrong-tree rail.
   const status = useStore(repoStatusForCwd(resolvedRepoPath))
   const worktrees = useStore(repoWorktreesForCwd(resolvedRepoPath))
+  // Re-read when the project list changes, so the row names the project this
+  // folder belongs to as soon as it is known.
+  useStore($projectTree)
+  const projectName = resolvedRepoPath ? projectNameForCwd(resolvedRepoPath) : null
+  const revealLabel = pickRevealLabel(fileMenu.revealFinder, fileMenu.revealExplorer, fileMenu.revealFileManager)
 
   // While mounted, keep this worktree in the coding-status refresh set so the
   // turn-settle / tool-complete / focus edges re-probe it too (tiles otherwise
@@ -196,6 +203,12 @@ export const CodingStatusRow = memo(function CodingStatusRow({
             label: <span className="truncate">{p.convertBranch}</span>,
             onSelect: () => startBranch(undefined)
           })}
+        <kit.Separator />
+        {renderActionItem(kit, {
+          key: '__reveal__',
+          label: <span className="truncate">{revealLabel}</span>,
+          onSelect: () => void revealPath(resolvedRepoPath ?? null)
+        })}
       </>
     )
   }
@@ -228,6 +241,10 @@ export const CodingStatusRow = memo(function CodingStatusRow({
             {/* Branch name — the other half of the review-pane target. `contents`
                 so the button lays out nothing of its own: the label stays the
                 same flex child it always was, and the hit area is the text. */}
+            {/* The project this folder belongs to, ahead of its branch: where the
+                chat works, at a glance. */}
+            {projectName && <span className="shrink-0 text-xs text-muted-foreground/60">{projectName} ·</span>}
+
             <button className="contents" onClick={onOpen} type="button">
               <span className="min-w-0 truncate text-xs font-normal text-muted-foreground/92" title={branchLabel}>
                 {branchLabel}

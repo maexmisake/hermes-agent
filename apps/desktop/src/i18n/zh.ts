@@ -2775,19 +2775,16 @@ export const zh = defineLocale({
     cronJobs: '定时任务',
     groupAriaGrouped: '以单一列表显示会话',
     groupAriaUngrouped: '按工作区分组会话',
-    showProjects: '显示项目',
     showSessions: '显示会话',
     groupTitleGrouped: '取消分组',
     groupTitleUngrouped: '按工作区分组',
     allPinned: '这里的全部已置顶。取消置顶某个对话即可在最近中显示。',
     shiftClickHint: 'Shift+ 单击对话以置顶 · 拖动以重新排序',
     noWorkspace: '无工作区',
-    projectEmpty: '暂无会话',
     projectLoadFailed: '会话加载失败',
     noSessions: '暂无会话',
     noFilterMatches: '没有会话符合这些筛选条件',
     projects: {
-      showAllSessions: '显示所有会话',
       sectionLabel: '项目',
       home: '主页',
       autoDiscovered: '自动发现',
@@ -2855,10 +2852,8 @@ export const zh = defineLocale({
         '从 git 中移除（删除工作树目录，但保留分支），或仅从侧边栏隐藏该泳道并将工作树保留在磁盘上。',
       removeWorktreeDirty: '此工作树有未提交的更改。强制移除（丢弃这些更改），或仅隐藏泳道并保留在磁盘上。',
       forceRemove: '强制移除',
-      enter: label => `打开 ${label}`,
       reorder: label => `重新排序 ${label}`,
-      toggle: (label, open) => `${open ? '展开' : '收起'} ${label} 会话`,
-      back: '全部项目'
+      toggle: (label, open) => `${open ? '展开' : '收起'} ${label} 会话`
     },
     newSessionIn: label => `在 ${label} 中新建会话`,
     showMoreIn: (count, label) => `在 ${label} 中再显示 ${count} 个`,
@@ -3089,6 +3084,26 @@ export const zh = defineLocale({
       prefix: '将此设置为定时任务:',
       done: '已标记为定时任务',
       doneTip: '发送后由智能体创建任务'
+    },
+    setup: {
+      projectTitle: '项目',
+      noProject: '无项目',
+      newProject: '新建项目…',
+      projectFailed: '无法设置项目',
+      workspaceTitle: '工作区',
+      noWorkspace: '无工作区',
+      recentWorkspaces: '最近的工作区',
+      addWorkspace: '添加工作区…',
+      browseWorkspace: '浏览…',
+      workspaceFailed: '无法设置工作区',
+      branchTitle: '分支',
+      keepWorking: branch => `继续在 ${branch} 上工作`,
+      keepWorkingHint: '同一文件夹，新对话',
+      newBranch: '新分支…',
+      newBranchLabel: '新分支',
+      newBranchHint: '发送时创建独立的文件夹，未保存的改动留在这里。',
+      startFrom: branch => `从 ${branch} 开始`,
+      branchFailed: '无法创建分支'
     },
     snippets: {
       codeReview: {

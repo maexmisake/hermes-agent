@@ -20,7 +20,6 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { useI18n } from '@/i18n'
-import { cn } from '@/lib/utils'
 import { $panesFlipped, dismissAutoProject } from '@/store/layout'
 import {
   copyPath,
@@ -41,37 +40,14 @@ import type { SidebarProjectTree } from './workspace-groups'
 // sidebar" (never deletes files — auto projects are dismissed, explicit ones
 // drop their entry). Explicit projects additionally get rename / add folder /
 // set active.
-function useProjectActions({
-  project,
-  isActive,
-  scoped,
-  onExitScope
-}: {
-  project: SidebarProjectTree
-  isActive: boolean
-  scoped: boolean
-  onExitScope?: () => void
-}) {
+function useProjectActions({ project, isActive }: { project: SidebarProjectTree; isActive: boolean }) {
   const { t } = useI18n()
   const p = t.sidebar.projects
   const target = { id: project.id, name: project.label }
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
 
-  const removeAuto = () => {
-    dismissAutoProject(project.id)
-
-    if (scoped) {
-      onExitScope?.()
-    }
-  }
-
-  const confirmDelete = async () => {
-    await deleteProject(project.id)
-
-    if (scoped) {
-      onExitScope?.()
-    }
-  }
+  const removeAuto = () => dismissAutoProject(project.id)
+  const confirmDelete = () => deleteProject(project.id)
 
   // Rename / add folder / set active — explicit projects only (auto ones lack a
   // materialized record). Appearance is handled per-surface (popover vs submenu)
@@ -143,16 +119,10 @@ function useProjectActions({
 export function ProjectMenu({
   project,
   isActive,
-  scoped = false,
-  onExitScope,
   anchorRef
 }: {
   project: SidebarProjectTree
   isActive: boolean
-  // True when rendered in the entered-project header, so removal can leave the
-  // now-defunct scope.
-  scoped?: boolean
-  onExitScope?: () => void
   // Anchor the appearance popover to the whole row instead of the kebab, so it
   // opens flush against the sidebar's content-facing edge — otherwise a
   // right-side sidebar drags the picker across the entire panel (the kebab
@@ -166,12 +136,7 @@ export function ProjectMenu({
   // when the panes are flipped (sidebar on the right).
   const panesFlipped = useStore($panesFlipped)
 
-  const { confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({
-    isActive,
-    onExitScope,
-    project,
-    scoped
-  })
+  const { confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({ isActive, project })
 
   // Appearance writes route through the adopt-aware helper: an auto project is
   // materialized on its first change (its id then changes), so close the picker
@@ -198,12 +163,7 @@ export function ProjectMenu({
     <DropdownMenuTrigger asChild>
       <button
         aria-label={p.menu}
-        className={cn(
-          'grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground data-[state=open]:opacity-100',
-          // In the project header reveal on the whole header hover; in overview
-          // rows reveal on the row hover.
-          scoped ? 'group-hover/section:opacity-100' : 'group-hover/workspace:opacity-100'
-        )}
+        className="grid size-4 shrink-0 place-items-center rounded-sm bg-transparent text-(--ui-text-quaternary) opacity-0 transition-opacity hover:bg-(--ui-control-hover-background) hover:text-foreground group-hover/workspace:opacity-100 data-[state=open]:opacity-100"
         onClick={event => event.stopPropagation()}
         type="button"
       >
@@ -276,30 +236,17 @@ export function ProjectMenu({
 interface ProjectContextMenuProps {
   project: SidebarProjectTree
   isActive: boolean
-  scoped?: boolean
-  onExitScope?: () => void
   children: React.ReactNode
 }
 
 // Wrap a project row so right-clicking it opens the same actions as its kebab.
 // The kebab's row-anchored Appearance popover can't nest in a context menu, so
 // here Appearance is a submenu with the same swatch + icon picker.
-export function ProjectContextMenu({
-  project,
-  isActive,
-  scoped = false,
-  onExitScope,
-  children
-}: ProjectContextMenuProps) {
+export function ProjectContextMenu({ project, isActive, children }: ProjectContextMenuProps) {
   const { t } = useI18n()
   const p = t.sidebar.projects
 
-  const { confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({
-    isActive,
-    onExitScope,
-    project,
-    scoped
-  })
+  const { confirmDialog, dangerItem, identityItems, pathItems } = useProjectActions({ isActive, project })
 
   const canTheme = !project.isAuto || Boolean(project.path)
 

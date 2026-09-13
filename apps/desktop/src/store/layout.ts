@@ -44,7 +44,6 @@ const SIDEBAR_ALL_PROFILES_AGENTS_GROUPED_STORAGE_KEY = 'hermes.desktop.sidebarA
 const SIDEBAR_SORT_KEY_STORAGE_KEY = 'hermes.desktop.sidebarSortKey'
 const SIDEBAR_ROW_META_STORAGE_KEY = 'hermes.desktop.sidebarRowMeta'
 const SIDEBAR_CARD_ROWS_STORAGE_KEY = 'hermes.desktop.sidebarCardRows'
-const SIDEBAR_SHOW_ALL_SESSIONS_STORAGE_KEY = 'hermes.desktop.sidebarShowAllSessions'
 const SIDEBAR_STATUS_FILTER_STORAGE_KEY = 'hermes.desktop.sidebarStatusFilter'
 const SIDEBAR_SHOW_ARCHIVED_STORAGE_KEY = 'hermes.desktop.sidebarShowArchived'
 const SIDEBAR_PROJECT_FILTER_STORAGE_KEY = 'hermes.desktop.sidebarProjectFilter'
@@ -325,13 +324,6 @@ export const $sidebarRowMeta = persistentAtom<SidebarRowMeta[]>(
  *  grouping is active. Off by default; dense tree surfaces never use it. */
 export const $sidebarCardRows = persistentAtom(SIDEBAR_CARD_ROWS_STORAGE_KEY, false, Codecs.bool)
 
-/** Project overview: two complete recency groups instead of three preview rows. */
-export const $sidebarShowAllSessions = persistentAtom(SIDEBAR_SHOW_ALL_SESSIONS_STORAGE_KEY, false, Codecs.bool)
-
-export function setSidebarShowAllSessions(on: boolean) {
-  $sidebarShowAllSessions.set(on)
-}
-
 export function setSidebarCardRows(on: boolean) {
   $sidebarCardRows.set(on)
 }
@@ -399,20 +391,12 @@ export const $sidebarFiltersActive: ReadableAtom<boolean> = computed(
  *  offering. Broader than `$sidebarFiltersActive`, which only knows about what
  *  hides rows, not about how they're grouped, sorted or labelled. */
 export const $sidebarViewCustomized: ReadableAtom<boolean> = computed(
-  [
-    $sidebarGrouping,
-    $sidebarOrdering,
-    $sidebarRowMeta,
-    $sidebarCardRows,
-    $sidebarShowAllSessions,
-    $sidebarFiltersActive
-  ],
-  (grouping, ordering, rowMeta, cardRows, showAllSessions, filtersActive) =>
+  [$sidebarGrouping, $sidebarOrdering, $sidebarRowMeta, $sidebarCardRows, $sidebarFiltersActive],
+  (grouping, ordering, rowMeta, cardRows, filtersActive) =>
     grouping !== SIDEBAR_DEFAULT_GROUPING ||
     ordering !== SIDEBAR_DEFAULT_ORDERING ||
     !sameRowMeta(rowMeta, SIDEBAR_DEFAULT_ROW_META) ||
     cardRows ||
-    showAllSessions ||
     filtersActive
 )
 
@@ -464,6 +448,14 @@ export function setWorkspaceNodesOpen(ids: readonly string[], open: boolean): vo
     ...$sidebarWorkspaceNodeOpen.get(),
     ...Object.fromEntries(ids.map(id => [id, open]))
   })
+}
+
+/** ⌘K "go to project" asks the sidebar to bring that project's row into view.
+ *  A fresh token each time, so asking for the same project twice still scrolls. */
+export const $sidebarProjectReveal = atom<null | { id: string; token: number }>(null)
+
+export function revealSidebarProject(id: string): void {
+  $sidebarProjectReveal.set({ id, token: ($sidebarProjectReveal.get()?.token ?? 0) + 1 })
 }
 
 // Dismiss ("delete") an auto-derived project from the overview.
@@ -722,7 +714,6 @@ export function resetSidebarView() {
   setSidebarOrdering(SIDEBAR_DEFAULT_ORDERING)
   $sidebarRowMeta.set(SIDEBAR_DEFAULT_ROW_META)
   $sidebarCardRows.set(false)
-  $sidebarShowAllSessions.set(false)
   clearSidebarFilters()
 }
 

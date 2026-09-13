@@ -2,23 +2,32 @@ import { atom } from 'nanostores'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { NO_PROJECT_ID, type SidebarProjectTree } from '@/app/chat/sidebar/projects/workspace-groups'
-import { $sidebarAgentsGrouped, setSidebarAgentsGrouped } from '@/store/layout'
-import { $activeGatewayProfile, $profileScope, ALL_PROFILES, setShowAllProfiles } from '@/store/profile'
+import {
+  $sidebarAgentsGrouped,
+  $sidebarProjectReveal,
+  $sidebarWorkspaceNodeOpen,
+  setSidebarAgentsGrouped
+} from '@/store/layout'
+import {
+  $activeGatewayProfile,
+  $profileScope,
+  ALL_PROFILES,
+  setShowAllProfiles,
+  takeFreshSessionDetached
+} from '@/store/profile'
 import { $currentCwd, $selectedStoredSessionId, $sessions, applyConfiguredDefaultProjectDir } from '@/store/session'
 
 import {
   $activeProjectId,
   $projects,
-  $projectScope,
   $projectsRpcAvailable,
   $projectTree,
   $worktreeRefreshToken,
-  ALL_PROJECTS,
   createProject,
-  enterProject,
-  exitProjectScope,
   fetchProjectSessions,
+  goToProject,
   openProjectCreate,
+  openProjectInSidebar,
   pickProjectFolder,
   projectIdForCwd,
   projectNameForCwd,
@@ -98,37 +107,35 @@ function deferred<T>() {
   return { promise, resolve }
 }
 
-describe('project scope', () => {
+describe('going to a project', () => {
   beforeEach(() => {
     window.localStorage.clear()
-    $projectScope.set(ALL_PROJECTS)
+    setSidebarAgentsGrouped(false)
+    $projectTree.set([])
   })
 
-  it('defaults to ALL_PROJECTS', () => {
-    expect($projectScope.get()).toBe(ALL_PROJECTS)
-  })
-
-  it('enterProject scopes the sidebar to the project id', () => {
+  it('opens the project in place, leaving every other project visible', () => {
     // setActiveProject fires best-effort (no gateway in test → it rejects and is
-    // swallowed); the synchronous scope change is what matters here.
-    enterProject('p_123')
-    expect($projectScope.get()).toBe('p_123')
+    // swallowed); opening the folder is the synchronous part.
+    openProjectInSidebar('p_123')
+
+    expect($sidebarWorkspaceNodeOpen.get().p_123).toBe(true)
   })
 
-  it('exitProjectScope returns to the overview', () => {
-    enterProject('p_123')
-    exitProjectScope()
-    expect($projectScope.get()).toBe(ALL_PROJECTS)
+  it('from the command palette shows projects and scrolls to the one picked', () => {
+    goToProject('p_123')
+
+    expect($sidebarAgentsGrouped.get()).toBe(true)
+    expect($sidebarProjectReveal.get()?.id).toBe('p_123')
   })
 
-  it('entering the synthetic Home bucket still scopes (no active pin)', () => {
-    enterProject(NO_PROJECT_ID)
-    expect($projectScope.get()).toBe(NO_PROJECT_ID)
-  })
+  it('starts a chat from Home with no folder, even with a default folder configured', () => {
+    applyConfiguredDefaultProjectDir('/home/user/configured')
 
-  it('persists the scope to localStorage', () => {
-    enterProject('p_abc')
-    expect(window.localStorage.getItem('hermes.desktop.projectScope')).toBe('p_abc')
+    goToProject(NO_PROJECT_ID, { newSession: true })
+
+    expect(takeFreshSessionDetached()).toBe(true)
+    applyConfiguredDefaultProjectDir(null)
   })
 })
 
@@ -161,7 +168,7 @@ describe('projects RPC profile forwarding', () => {
     await fetchProjectSessions('p_123')
 
     expect(request).toHaveBeenNthCalledWith(1, 'projects.list', { profile: 'coder' })
-    expect(request).toHaveBeenNthCalledWith(2, 'projects.tree', { preview_limit: 3, profile: 'coder' })
+    expect(request).toHaveBeenNthCalledWith(2, 'projects.tree', { preview_limit: 2000, profile: 'coder' })
     expect(request).toHaveBeenNthCalledWith(3, 'projects.project_sessions', {
       profile: 'coder',
       project_id: 'p_123'
@@ -186,7 +193,6 @@ describe('projects RPC profile forwarding', () => {
 
 describe('resolveNewSessionCwd', () => {
   beforeEach(() => {
-    $projectScope.set(ALL_PROJECTS)
     applyConfiguredDefaultProjectDir('/home/user/configured')
     $currentCwd.set('')
     $selectedStoredSessionId.set(null)
@@ -198,21 +204,12 @@ describe('resolveNewSessionCwd', () => {
 
   afterEach(() => {
     applyConfiguredDefaultProjectDir(null)
-    $projectScope.set(ALL_PROJECTS)
     $currentCwd.set('')
     $selectedStoredSessionId.set(null)
     $sessions.set([])
   })
 
-  it('starts a chat detached inside Home, ignoring the configured default dir', () => {
-    // Attaching the default dir here would move the new chat out of Home the
-    // moment it was created — "no folder" is what the bucket means.
-    enterProject(NO_PROJECT_ID)
-
-    expect(resolveNewSessionCwd()).toBe('')
-  })
-
-  it('still falls back to the configured default outside Home', () => {
+  it('falls back to the configured default', () => {
     expect(resolveNewSessionCwd()).toBe('/home/user/configured')
   })
 
@@ -440,7 +437,7 @@ describe('createProject', () => {
     expect($projectTree.get()).toEqual(expect.arrayContaining([expect.objectContaining({ id: created.id })]))
     expect($activeProjectId.get()).toBe(created.id)
     expect(hermes.hermesApi).toHaveBeenCalledWith(
-      expect.objectContaining({ path: '/api/profiles/projects/tree?preview_limit=3' })
+      expect.objectContaining({ path: '/api/profiles/projects/tree?preview_limit=2000' })
     )
   })
 

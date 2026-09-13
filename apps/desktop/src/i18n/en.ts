@@ -2616,19 +2616,16 @@ export const en: Translations = {
     cronJobs: 'Cron jobs',
     groupAriaGrouped: 'Show sessions as a single list',
     groupAriaUngrouped: 'Group sessions by workspace',
-    showProjects: 'Show projects',
     showSessions: 'Show sessions',
     groupTitleGrouped: 'Ungroup sessions',
     groupTitleUngrouped: 'Group by workspace',
     allPinned: 'Everything here is pinned. Unpin a chat to show it in recents.',
     shiftClickHint: 'Shift-click a chat to pin',
     noWorkspace: 'No workspace',
-    projectEmpty: 'No sessions yet',
     projectLoadFailed: 'Could not load sessions',
     noSessions: 'No sessions yet',
     noFilterMatches: 'No sessions match these filters',
     projects: {
-      showAllSessions: 'Show all sessions',
       sectionLabel: 'Projects',
       home: 'Home',
       autoDiscovered: 'Auto-discovered',
@@ -2699,10 +2696,8 @@ export const en: Translations = {
       removeWorktreeDirty:
         'This worktree has uncommitted changes. Force-remove it (discards those changes), or just hide the lane and keep it on disk.',
       forceRemove: 'Force remove',
-      enter: label => `Open ${label}`,
       reorder: label => `Reorder ${label}`,
-      toggle: (label, open) => `${open ? 'Show' : 'Hide'} ${label} sessions`,
-      back: 'All projects'
+      toggle: (label, open) => `${open ? 'Show' : 'Hide'} ${label} sessions`
     },
     newSessionIn: label => `New session in ${label}`,
     showMoreIn: (count, label) => `Show ${count} more in ${label}`,
@@ -2933,6 +2928,26 @@ export const en: Translations = {
       prefix: 'Set this up as a scheduled job:',
       done: 'Marked for scheduling',
       doneTip: 'Send it and the agent creates the job'
+    },
+    setup: {
+      projectTitle: 'Project',
+      noProject: 'No project',
+      newProject: 'New project…',
+      projectFailed: 'Could not set the project',
+      workspaceTitle: 'Workspace',
+      noWorkspace: 'No workspace',
+      recentWorkspaces: 'Recent workspaces',
+      addWorkspace: 'Add workspace…',
+      browseWorkspace: 'Browse…',
+      workspaceFailed: 'Could not set the workspace',
+      branchTitle: 'Branch',
+      keepWorking: branch => `Keep working on ${branch}`,
+      keepWorkingHint: 'Same folder, fresh chat',
+      newBranch: 'New branch…',
+      newBranchLabel: 'New branch',
+      newBranchHint: 'Gets its own folder when you send. Unsaved changes stay here.',
+      startFrom: branch => `Start from ${branch}`,
+      branchFailed: 'Could not create the branch'
     },
     snippets: {
       codeReview: {

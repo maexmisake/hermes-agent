@@ -30,3 +30,21 @@ export function shouldShowIntro(input: {
     input.messagesEmpty
   )
 }
+
+/**
+ * Whether the new-chat setup bubbles (project / workspace / branch) render above the
+ * composer: the same "this chat has not started yet" condition as the splash, minus the
+ * Appearance toggle. Turning the wordmark off is about decoration; the bubbles are how a
+ * chat is told where to work before it starts. Once a message is sent they are gone.
+ */
+export function shouldShowSessionSetup(input: {
+  activeSessionId: null | string
+  auxiliaryWindow: boolean
+  freshDraftReady: boolean
+  messagesEmpty: boolean
+  primary: boolean
+  routedSessionView: boolean
+  selectedSessionId: null | string
+}): boolean {
+  return shouldShowIntro({ ...input, enabled: true })
+}
