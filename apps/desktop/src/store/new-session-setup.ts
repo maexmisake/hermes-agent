@@ -507,11 +507,8 @@ export async function materializeNewChatBranch(cwd: string, message = ''): Promi
 
   const next = await workspaceInCheckout(created.path, workspace)
 
-  // The new folder must still file under the picked project in the sidebar. All
-  // profiles view keeps projects read-only, so the folder is not saved there.
-  const canEditProjects = $profileScope.get() !== ALL_PROFILES
-
-  if (canEditProjects && project && !project.folders.some(folder => isUnderPath(folder.path, next))) {
+  // The new folder must still file under the picked project in the sidebar.
+  if (project && !project.folders.some(folder => isUnderPath(folder.path, next))) {
     await addProjectFolder(project.id, next).catch(() => undefined)
   }
 

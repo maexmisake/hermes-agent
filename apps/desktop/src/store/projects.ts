@@ -1031,10 +1031,15 @@ export async function addProjectFolder(
     }
   }
 
+  // In "All profiles" view the folder goes to the live gateway's profile, the rule
+  // creating a project already follows.
   await persistOrRollback(snap, () =>
     gatewayRequest(
       'projects.add_folder',
-      projectParams({ id, path, label: opts.label, is_primary: opts.isPrimary ?? false })
+      projectParams(
+        { id, path, label: opts.label, is_primary: opts.isPrimary ?? false },
+        projectProfile() ?? normalizeProfileKey($activeGatewayProfile.get())
+      )
     )
   )
   reconcileProjects()

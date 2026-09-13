@@ -81,21 +81,21 @@ describe('SessionSetupRow', () => {
     expect(menu.getByRole('menuitem', { name: 'New project…' })).toBeTruthy()
   })
 
-  it('in "All profiles" view offers no project edits and only projects that have a workspace', async () => {
+  it('in "All profiles" view still offers every project, "New project…" and "Add workspace…"', async () => {
     $showAllProfiles.set(true)
     render(<SessionSetupRow />)
 
     const projectMenu = await openMenu(/^Project:/)
 
     expect(await projectMenu.findByRole('menuitem', { name: 'pets' })).toBeTruthy()
-    expect(projectMenu.queryByRole('menuitem', { name: 'empty' })).toBeNull()
-    expect(projectMenu.queryByRole('menuitem', { name: 'New project…' })).toBeNull()
+    expect(projectMenu.getByRole('menuitem', { name: 'empty' })).toBeTruthy()
+    expect(projectMenu.getByRole('menuitem', { name: 'New project…' })).toBeTruthy()
 
     fireEvent.click(projectMenu.getByRole('menuitem', { name: 'pets' }))
 
     const workspaceMenu = await openMenu(/^Workspace: pets$/)
 
     expect(workspaceMenu.getByRole('menuitem', { name: /^pets/ })).toBeTruthy()
-    expect(workspaceMenu.queryByRole('menuitem', { name: 'Add workspace…' })).toBeNull()
+    expect(workspaceMenu.getByRole('menuitem', { name: 'Add workspace…' })).toBeTruthy()
   })
 })

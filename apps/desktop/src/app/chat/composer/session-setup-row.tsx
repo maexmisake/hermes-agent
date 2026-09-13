@@ -34,13 +34,12 @@ import {
   keepCurrentBranch,
   loadNewChatProjects,
   probeNewChatWorkspace,
-  projectMainWorkspace,
   samePath,
   setNewChatProject,
   setNewChatWorkspace
 } from '@/store/new-session-setup'
 import { notifyError } from '@/store/notifications'
-import { $profileScope, ALL_PROFILES } from '@/store/profile'
+import { $profileScope } from '@/store/profile'
 import { listRepoBranches } from '@/store/projects'
 
 const BUBBLE = cn(composerFloatingPill, 'max-w-44')
@@ -94,15 +93,7 @@ export function SessionSetupRow() {
     }
   }
 
-  // All profiles view keeps projects read-only: a folder can only be saved to a
-  // project while viewing that project's profile. A project with no folder would
-  // need one saved first, so it is not offered there.
-  const canEditProjects = profileScope !== ALL_PROFILES
-
-  const openProjects = projects.filter(
-    candidate => !candidate.archived && (canEditProjects || Boolean(projectMainWorkspace(candidate)))
-  )
-
+  const openProjects = projects.filter(candidate => !candidate.archived)
   const workspaceListed = Boolean(project?.folders.some(folder => samePath(folder.path, workspace)))
 
   const pickWorkspace = (path: string, projectId?: string) =>
@@ -139,7 +130,7 @@ export function SessionSetupRow() {
           label={s.noProject}
           onSelect={() => run(() => setNewChatProject(null), s.projectFailed)}
         />
-        {canEditProjects && <SetupItem icon="add" label={s.newProject} onSelect={createProjectForNewChat} />}
+        <SetupItem icon="add" label={s.newProject} onSelect={createProjectForNewChat} />
       </SetupBubble>
 
       <SetupBubble
@@ -167,16 +158,12 @@ export function SessionSetupRow() {
                 onSelect={pickWorkspace(folder.path, project.id)}
               />
             ))}
-            {canEditProjects && (
-              <>
-                <DropdownMenuSeparator />
-                <SetupItem
-                  icon="add"
-                  label={s.addWorkspace}
-                  onSelect={() => run(() => addNewChatWorkspace(project), s.workspaceFailed)}
-                />
-              </>
-            )}
+            <DropdownMenuSeparator />
+            <SetupItem
+              icon="add"
+              label={s.addWorkspace}
+              onSelect={() => run(() => addNewChatWorkspace(project), s.workspaceFailed)}
+            />
           </>
         ) : (
           <>
@@ -278,7 +265,11 @@ function SetupItem({
       <Codicon name={icon} size="0.75rem" />
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate">{label}</span>
-        {hint && <span className={HINT}>{hint}</span>}
+        {hint && (
+          <span className={HINT} title={hint}>
+            {hint}
+          </span>
+        )}
       </span>
       {checked && <Codicon className="ml-auto shrink-0" name="check" size="0.75rem" />}
     </DropdownMenuItem>

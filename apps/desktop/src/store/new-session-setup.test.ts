@@ -263,7 +263,7 @@ describe('materializeNewChatBranch', () => {
     expect(git.addProjectFolder).toHaveBeenCalledWith('pets', '/repo/.worktrees/work/pets')
   })
 
-  it('keeps that place in "All profiles" view without saving the folder to the project, which is read-only there', async () => {
+  it('files that place under the picked project in "All profiles" view too', async () => {
     $showAllProfiles.set(true)
     git.listProjectsForProfile.mockResolvedValue([project('pets', ['/repo/pets'])])
     await loadNewChatProjects()
@@ -273,7 +273,7 @@ describe('materializeNewChatBranch', () => {
     git.isGitRepoPath.mockResolvedValue(true)
 
     await expect(materializeNewChatBranch('/repo/pets')).resolves.toBe('/repo/.worktrees/work/pets')
-    expect(git.addProjectFolder).not.toHaveBeenCalled()
+    expect(git.addProjectFolder).toHaveBeenCalledWith('pets', '/repo/.worktrees/work/pets')
   })
 
   it('stops the send with a readable error when git refuses', async () => {
