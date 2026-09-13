@@ -2377,6 +2377,26 @@ export const zhHant = defineLocale({
     snippetsDesc: '選擇一個起始提示詞放入輸入框。',
     dropFiles: '拖曳檔案以附加',
     dropSession: '拖曳以連結此聊天',
+    setup: {
+      projectTitle: '專案',
+      noProject: '無專案',
+      newProject: '新增專案…',
+      projectFailed: '無法設定專案',
+      workspaceTitle: '工作區',
+      noWorkspace: '無工作區',
+      recentWorkspaces: '最近的工作區',
+      addWorkspace: '新增工作區…',
+      browseWorkspace: '瀏覽…',
+      workspaceFailed: '無法設定工作區',
+      branchTitle: '分支',
+      keepWorking: branch => `繼續在 ${branch} 上工作`,
+      keepWorkingHint: '同一資料夾，新對話',
+      newBranch: '新分支…',
+      newBranchLabel: '新分支',
+      newBranchHint: '傳送時建立獨立的資料夾，未儲存的變更會留在這裡。',
+      startFrom: branch => `從 ${branch} 開始`,
+      branchFailed: '無法建立分支'
+    },
     snippets: {
       codeReview: {
         label: '程式碼審查',

@@ -2776,6 +2776,26 @@ export const ru = defineLocale({
       done: 'Отмечено для планирования',
       doneTip: 'Отправьте, и агент создаст задачу'
     },
+    setup: {
+      projectTitle: 'Проект',
+      noProject: 'Без проекта',
+      newProject: 'Новый проект…',
+      projectFailed: 'Не удалось выбрать проект',
+      workspaceTitle: 'Рабочее пространство',
+      noWorkspace: 'Без рабочего пространства',
+      recentWorkspaces: 'Недавние рабочие пространства',
+      addWorkspace: 'Добавить рабочее пространство…',
+      browseWorkspace: 'Обзор…',
+      workspaceFailed: 'Не удалось выбрать рабочее пространство',
+      branchTitle: 'Ветка',
+      keepWorking: branch => `Продолжить работу в ${branch}`,
+      keepWorkingHint: 'Та же папка, новый чат',
+      newBranch: 'Новая ветка…',
+      newBranchLabel: 'Новая ветка',
+      newBranchHint: 'При отправке получит свою папку. Несохранённые изменения останутся здесь.',
+      startFrom: branch => `Начать с ${branch}`,
+      branchFailed: 'Не удалось создать ветку'
+    },
     snippets: {
       codeReview: {
         label: 'Рецензия кода',

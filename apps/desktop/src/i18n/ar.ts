@@ -2107,6 +2107,26 @@ export const ar = defineLocale({
     snippetsDesc: 'اختر موجّهًا أوليًا لإدراجه في المحرّر.',
     dropFiles: 'أفلت الملفات للإرفاق',
     dropSession: 'أفلت الجلسة للفتح',
+    setup: {
+      projectTitle: 'المشروع',
+      noProject: 'بلا مشروع',
+      newProject: 'مشروع جديد…',
+      projectFailed: 'تعذّر تعيين المشروع',
+      workspaceTitle: 'مساحة العمل',
+      noWorkspace: 'بلا مساحة عمل',
+      recentWorkspaces: 'مساحات العمل الأخيرة',
+      addWorkspace: 'إضافة مساحة عمل…',
+      browseWorkspace: 'استعراض…',
+      workspaceFailed: 'تعذّر تعيين مساحة العمل',
+      branchTitle: 'الفرع',
+      keepWorking: branch => `متابعة العمل على ${branch}`,
+      keepWorkingHint: 'المجلد نفسه، محادثة جديدة',
+      newBranch: 'فرع جديد…',
+      newBranchLabel: 'فرع جديد',
+      newBranchHint: 'يحصل على مجلده الخاص عند الإرسال. تبقى التغييرات غير المحفوظة هنا.',
+      startFrom: branch => `البدء من ${branch}`,
+      branchFailed: 'تعذّر إنشاء الفرع'
+    },
     snippets: {
       codeReview: {
         label: 'مراجعة الكود',

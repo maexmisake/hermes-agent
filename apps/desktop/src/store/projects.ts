@@ -373,6 +373,21 @@ export async function refreshProjects(): Promise<void> {
   }
 }
 
+/** One profile's projects, leaving the sidebar's cached list alone. The new-chat
+ *  bubbles use it in "All profiles" view, where that list is never loaded. Only
+ *  the profile the live gateway serves can answer; any other throws. */
+export async function listProjectsForProfile(profile: string): Promise<ProjectInfo[]> {
+  const context = await activeProjectsContext(normalizeProfileKey(profile))
+
+  const payload = await gatewayRequestOn<ProjectsPayload>(
+    context.gateway,
+    'projects.list',
+    projectParams({}, context.profile)
+  )
+
+  return payload.projects ?? []
+}
+
 interface ProjectTreePayload {
   projects: SidebarProjectTree[]
   active_id: null | string

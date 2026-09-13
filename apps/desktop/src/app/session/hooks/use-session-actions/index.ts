@@ -2,7 +2,6 @@ import { useStore } from '@nanostores/react'
 import { type MutableRefObject, useCallback, useEffect, useRef } from 'react'
 import type { NavigateFunction } from 'react-router'
 
-import { NO_PROJECT_ID } from '@/app/chat/sidebar/projects/workspace-groups'
 import { graftRefreshedTailOntoBackfill } from '@/app/chat/transcript-backfill'
 import { revealTreePane } from '@/components/pane-shell/tree/store'
 import { setWorkspaceScope } from '@/components/pane-shell/workspace-scope'
@@ -36,6 +35,7 @@ import {
 } from '@/store/gateway'
 import { $gatewaySwitching } from '@/store/gateway-switch'
 import { $pinnedSessionIds } from '@/store/layout'
+import { draftWorkspace, materializeNewChatBranch } from '@/store/new-session-setup'
 import { clearNotifications, notify, notifyError } from '@/store/notifications'
 import {
   $activeGatewayProfile,
@@ -49,7 +49,7 @@ import {
   normalizeProfileKey,
   resolveNewChatOwnerRoute
 } from '@/store/profile'
-import { $projectScope, resolveNewSessionCwd } from '@/store/projects'
+import { resolveNewSessionCwd } from '@/store/projects'
 import { setApprovalRequest } from '@/store/prompts'
 import { clearStoredTranscriptReadOnly, markStoredTranscriptReadOnly } from '@/store/read-only-transcript'
 import {
@@ -549,20 +549,11 @@ export function useSessionActions({
       creatingSessionRef.current = true
 
       try {
-        // An explicit one-shot workspace target (null → detached, string → that
-        // folder) wins; otherwise the live cwd, then the project-aware default
-        // (resolveNewSessionCwd — a project's new session keeps its repo cwd).
-        // Home is an explicit detached scope: do not let a stale live cwd from
-        // the previously selected project leak into this new session (#84220).
-        const workspaceTarget = $newChatWorkspaceTarget.get()
-        const homeScope = $projectScope.get() === NO_PROJECT_ID
-
-        const cwd =
-          workspaceTarget === null || (workspaceTarget === undefined && homeScope)
-            ? ''
-            : typeof workspaceTarget === 'string'
-              ? workspaceTarget.trim()
-              : $currentCwd.get().trim() || resolveNewSessionCwd()
+        // The workspace the setup bubbles show: an explicit one-shot target (null →
+        // detached, string → that folder) wins; otherwise the live cwd, then the
+        // project-aware default (resolveNewSessionCwd — a project's new session
+        // keeps its repo cwd). Home stays detached (#84220).
+        const draftCwd = draftWorkspace($newChatWorkspaceTarget.get(), $currentCwd.get())
 
         // The EXACT owner for this create: an explicit agent route, else the
         // (registry source, profile) pair the draft was made on. Read ONCE at
@@ -570,11 +561,27 @@ export function useSessionActions({
         // the owner hint, the optimistic row and the failure cleanup, so the
         // profile-rail path (selectProfile clears $newChatRoute) can no longer
         // reduce the owner to a bare profile name that later RPCs dial on a
-        // different socket than the one that minted the runtime.
+        // different socket than the one that minted the runtime. Read before
+        // the new-branch step awaits git, so a profile switch during that step
+        // cannot move the chat.
         const capturedRoute = resolveNewChatOwnerRoute()
+        // Starting the params read here freezes the composer's visible
+        // model/effort selection at Send too, before anything below awaits; the
+        // cwd it carries is replaced once the branch step has run.
+        const baseParams = desktopSessionCreateParams(draftCwd, capturedRoute)
 
-        const params = {
-          ...(await desktopSessionCreateParams(cwd, capturedRoute)),
+        // A failure there is still seen by the await below; this only keeps it
+        // from being reported as unhandled when the branch step throws first.
+        baseParams.catch(() => undefined)
+
+        // A new branch picked in the setup bubbles is made only now, at send, in its
+        // own folder; the chat then starts there. A failure stops the send rather
+        // than quietly starting the chat in the shared folder.
+        const cwd = await materializeNewChatBranch(draftCwd, preview ?? '')
+
+        const params: Record<string, unknown> = {
+          ...(await baseParams),
+          ...(cwd && { cwd }),
           ...sessionCreateOverrideParams(createOverrides, seedMessages)
         }
 

@@ -175,6 +175,34 @@ async function defaultBranch(gitBin, cwd) {
   return ''
 }
 
+// Keep the managed `.worktrees/` folder out of the main checkout's `git status`,
+// through the repo-local exclude file (never the project's own `.gitignore`), so
+// chats still working in the main folder don't see the branch folders as new
+// files and a routine `git add -A` can't commit one as an embedded repo. Best
+// effort: a repo whose exclude file can't be written still gets its worktree.
+async function excludeManagedWorktrees(gitBin, root) {
+  try {
+    const commonDir = await gitLine(gitBin, ['rev-parse', '--git-common-dir'], root)
+
+    if (!commonDir) {
+      return
+    }
+
+    const file = path.join(path.resolve(root, commonDir), 'info', 'exclude')
+    const current = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''
+    const covered = ['/.worktrees/', '/.worktrees', '.worktrees/', '.worktrees']
+
+    if (current.split(/\r?\n/).some(line => covered.includes(line.trim()))) {
+      return
+    }
+
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.appendFileSync(file, `${current && !current.endsWith('\n') ? '\n' : ''}/.worktrees/\n`)
+  } catch {
+    // The worktree itself does not depend on the exclusion.
+  }
+}
+
 // A brand-new project folder isn't a git repo — and a freshly-init'd one has no
 // commit to branch from — so `git worktree add` would fail. Make the dir a repo
 // with a root commit on the user's behalf so worktrees "just work". No-op for a
@@ -292,6 +320,10 @@ async function addWorktree(repoPath, options, gitBin) {
   await ensureGitRepo(gitBin, resolved)
   const root = await mainRoot(gitBin, resolved)
   const opts = options || {}
+
+  // Before any branch or folder exists, so a new worktree never shows up as
+  // untracked in the main checkout.
+  await excludeManagedWorktrees(gitBin, root)
 
   if (opts.existingBranch) {
     return addExistingBranchWorktree(gitBin, root, opts.existingBranch)

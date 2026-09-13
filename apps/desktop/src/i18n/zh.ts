@@ -3090,6 +3090,26 @@ export const zh = defineLocale({
       done: '已标记为定时任务',
       doneTip: '发送后由智能体创建任务'
     },
+    setup: {
+      projectTitle: '项目',
+      noProject: '无项目',
+      newProject: '新建项目…',
+      projectFailed: '无法设置项目',
+      workspaceTitle: '工作区',
+      noWorkspace: '无工作区',
+      recentWorkspaces: '最近的工作区',
+      addWorkspace: '添加工作区…',
+      browseWorkspace: '浏览…',
+      workspaceFailed: '无法设置工作区',
+      branchTitle: '分支',
+      keepWorking: branch => `继续在 ${branch} 上工作`,
+      keepWorkingHint: '同一文件夹，新对话',
+      newBranch: '新分支…',
+      newBranchLabel: '新分支',
+      newBranchHint: '发送时创建独立的文件夹，未保存的改动留在这里。',
+      startFrom: branch => `从 ${branch} 开始`,
+      branchFailed: '无法创建分支'
+    },
     snippets: {
       codeReview: {
         label: '代码审查',
