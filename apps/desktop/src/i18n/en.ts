@@ -2934,6 +2934,26 @@ export const en: Translations = {
       done: 'Marked for scheduling',
       doneTip: 'Send it and the agent creates the job'
     },
+    setup: {
+      projectTitle: 'Project',
+      noProject: 'No project',
+      newProject: 'New project…',
+      projectFailed: 'Could not set the project',
+      workspaceTitle: 'Workspace',
+      noWorkspace: 'No workspace',
+      recentWorkspaces: 'Recent workspaces',
+      addWorkspace: 'Add workspace…',
+      browseWorkspace: 'Browse…',
+      workspaceFailed: 'Could not set the workspace',
+      branchTitle: 'Branch',
+      keepWorking: branch => `Keep working on ${branch}`,
+      keepWorkingHint: 'Same folder, fresh chat',
+      newBranch: 'New branch…',
+      newBranchLabel: 'New branch',
+      newBranchHint: 'Gets its own folder when you send. Unsaved changes stay here.',
+      startFrom: branch => `Start from ${branch}`,
+      branchFailed: 'Could not create the branch'
+    },
     snippets: {
       codeReview: {
         label: 'Code review',

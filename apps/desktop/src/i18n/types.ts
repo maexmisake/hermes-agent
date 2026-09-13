@@ -2525,6 +2525,27 @@ export interface Translations {
       done: string
       doneTip: string
     }
+    /** The new-chat setup bubbles above the composer (project / workspace / branch). */
+    setup: {
+      projectTitle: string
+      noProject: string
+      newProject: string
+      projectFailed: string
+      workspaceTitle: string
+      noWorkspace: string
+      recentWorkspaces: string
+      addWorkspace: string
+      browseWorkspace: string
+      workspaceFailed: string
+      branchTitle: string
+      keepWorking: (branch: string) => string
+      keepWorkingHint: string
+      newBranch: string
+      newBranchLabel: string
+      newBranchHint: string
+      startFrom: (branch: string) => string
+      branchFailed: string
+    }
   }
 
   statusStack: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { shouldShowIntro } from './intro-visibility'
+import { shouldShowIntro, shouldShowSessionSetup } from './intro-visibility'
 
 const showing = {
   activeSessionId: null,
@@ -44,5 +44,23 @@ describe('shouldShowIntro', () => {
     expect(shouldShowIntro({ ...showing, selectedSessionId: 'session-1' })).toBe(false)
     expect(shouldShowIntro({ ...showing, activeSessionId: 'session-1' })).toBe(false)
     expect(shouldShowIntro({ ...showing, messagesEmpty: false })).toBe(false)
+  })
+})
+
+describe('shouldShowSessionSetup', () => {
+  // The same fresh draft, with the intro turned off in Appearance.
+  const introOff = { ...showing, enabled: false }
+
+  it('shows on a fresh primary draft even when the Appearance intro toggle is off', () => {
+    expect(shouldShowIntro(introOff)).toBe(false)
+    expect(shouldShowSessionSetup(introOff)).toBe(true)
+  })
+
+  it('hides once the chat has started or the surface is not an empty primary draft', () => {
+    expect(shouldShowSessionSetup({ ...introOff, messagesEmpty: false })).toBe(false)
+    expect(shouldShowSessionSetup({ ...introOff, activeSessionId: 'session-1' })).toBe(false)
+    expect(shouldShowSessionSetup({ ...introOff, selectedSessionId: 'session-1' })).toBe(false)
+    expect(shouldShowSessionSetup({ ...introOff, auxiliaryWindow: true })).toBe(false)
+    expect(shouldShowSessionSetup({ ...introOff, primary: false })).toBe(false)
   })
 })

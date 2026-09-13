@@ -116,6 +116,25 @@ test('ensureGitRepo: the root commit still lands when the repo requires signing 
   }
 })
 
+test('addWorktree: keeps .worktrees/ out of the main checkout status, written once', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-exclude-'))
+  const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
+
+  try {
+    await ensureGitRepo('git', dir)
+    await addWorktree(dir, { branch: 'hermes/one', name: 'one' }, 'git')
+    await addWorktree(dir, { branch: 'hermes/two', name: 'two' }, 'git')
+
+    assert.equal(git('status', '--porcelain'), '')
+
+    const exclude = fs.readFileSync(path.join(dir, '.git', 'info', 'exclude'), 'utf8')
+
+    assert.equal(exclude.split(/\r?\n/).filter(line => line.trim() === '/.worktrees/').length, 1)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('switchBranch: switches a normal checkout branch', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-switch-'))
   const git = (...args) => execFileSync('git', args, { cwd: dir }).toString().trim()
